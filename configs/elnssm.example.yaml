@@ -1,0 +1,61 @@
+# ELNSSM Global Configuration
+
+guardian:
+  data_dir: "C:\\ProgramData\\ELNSSM"
+  log_level: "info"   # debug, info, warn, error
+
+api:
+  listen: "127.0.0.1:9100"
+  ip_whitelist:
+    - "127.0.0.1"
+    - "::1"
+  auth:
+    enabled: false
+    type: "token"     # "basic" or "token"
+
+defaults:
+  stop_timeout: "30s"
+  stop_signal: "ctrl_c"
+  priority: "normal"
+  restart_policy:
+    mode: "on_failure"
+    delay: "5s"
+    max_retries: 10
+    retry_window: "1h"
+    backoff_multiplier: 2.0
+    max_backoff: "5m"
+    restart_on_health_fail: true
+  logging:
+    max_size: 52428800       # 50 MB
+    max_age: "168h"          # 7 days
+    max_backups: 5
+    compress: true
+    combine_output: false
+
+smtp:
+  enabled: false
+  host: "smtp.example.com"
+  port: 587
+  username: ""
+  password: ""
+  from: "elnssm@example.com"
+  tls: true
+  recipients:
+    - "admin@example.com"
+
+webhooks:
+  - name: "slack-ops"
+    enabled: false
+    url: "https://hooks.slack.com/services/xxx/yyy/zzz"
+    method: "POST"
+    headers:
+      Content-Type: "application/json"
+    body_template: |
+      {"text": "[ELNSSM] {{.Event}}: {{.ServiceName}} - {{.Message}}"}
+    events:
+      - "service.crashed"
+      - "service.restarted"
+      - "health_check.failed"
+      - "restart.limit_reached"
+
+notification_cooldown: "5m"

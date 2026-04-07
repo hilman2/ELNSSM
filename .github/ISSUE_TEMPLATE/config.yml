@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/hilman2/ELNSSM/security/advisories/new
+    about: Please report security issues privately, not via public issues.
+  - name: Question / discussion
+    url: https://github.com/hilman2/ELNSSM/discussions
+    about: General questions and ideas belong in Discussions.

@@ -1,0 +1,86 @@
+# GoReleaser v2 configuration
+# Docs: https://goreleaser.com/customization/
+
+version: 2
+
+project_name: elnssm
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: elnssm
+    main: .
+    binary: elnssm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/hilman2/ELNSSM/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/hilman2/ELNSSM/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/hilman2/ELNSSM/internal/buildinfo.BuildDate={{ .Date }}
+
+archives:
+  - id: default
+    formats: [ zip ]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - configs/**/*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: "Features"
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: "Bug fixes"
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: "Performance"
+      regexp: "^.*perf[(\\w)]*:+.*$"
+      order: 2
+    - title: "Documentation"
+      regexp: "^.*docs[(\\w)]*:+.*$"
+      order: 3
+    - title: "Other"
+      order: 999
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  header: |
+    ## ELNSSM {{ .Tag }}
+
+    Windows binaries for `amd64` and `arm64` are attached below. Verify
+    downloads against `checksums.txt`.
+  footer: |
+    **Full Changelog**: https://github.com/hilman2/ELNSSM/compare/{{ .PreviousTag }}...{{ .Tag }}

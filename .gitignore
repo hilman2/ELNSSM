@@ -1,0 +1,62 @@
+# Local backup of previous .git directory (created during repo reinit)
+.git.bak/
+
+# Compiled binaries / build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Build directories
+/dist/
+/build/
+/bin/
+
+# Coverage / profiling
+*.prof
+*.pprof
+coverage.txt
+coverage.html
+coverage.out
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# AI assistant / agent tooling — never publish
+.claude/
+.cursor/
+.windsurf/
+.aider*
+.continue/
+CLAUDE.md
+AGENTS.md
+
+# Local configuration & runtime data
+/elnssm.yaml
+/data/
+*.local.yaml
+*.local.yml
+
+# Bolt database files
+*.db
+*.bolt
+
+# Logs
+*.log
+/logs/
+
+# Go workspace files
+go.work
+go.work.sum
+
+# GoReleaser snapshot output
+/dist

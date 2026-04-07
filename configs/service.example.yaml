@@ -1,0 +1,89 @@
+# Example ELNSSM Service Configuration
+id: "my-app"
+name: "my-app"
+display_name: "My Application Server"
+description: "Node.js application server"
+
+executable: "C:\\Program Files\\nodejs\\node.exe"
+arguments:
+  - "server.js"
+  - "--port"
+  - "3000"
+working_dir: "C:\\Apps\\my-app"
+
+environment:
+  NODE_ENV: "production"
+  PORT: "3000"
+
+startup_type: "auto"           # auto, manual, disabled, delayed-auto
+service_account: "LocalSystem"
+# service_account_password: ""  # DPAPI-encrypted, set via GUI or API
+priority: "normal"
+
+stop_timeout: "30s"
+stop_signal: "ctrl_c"          # ctrl_c, ctrl_break, wm_close, terminate
+
+restart_policy:
+  mode: "on_failure"           # always, on_failure, never
+  delay: "3s"
+  max_retries: 5
+  retry_window: "30m"
+  backoff_multiplier: 2.0
+  max_backoff: "2m"
+  restart_on_health_fail: true
+  scheduled_restart: "0 3 * * *"   # daily at 03:00 (cron)
+
+health_checks:
+  - type: "http"
+    target: "http://localhost:3000/health"
+    method: "GET"
+    expect_status: 200
+    expect_body: '"status":"ok"'   # optional substring match in response body
+    interval: "30s"
+    timeout: "10s"
+    retries: 3
+    start_delay: "15s"
+
+  - type: "tcp"
+    target: "localhost:3000"
+    send: "PING"                   # optional: data to send after connect
+    expect_resp: "PONG"            # optional: expected substring in response
+    interval: "15s"
+    timeout: "5s"
+    retries: 2
+    start_delay: "10s"
+
+  - type: "script"
+    script_body: |                 # inline script (PowerShell auto-detected)
+      $response = Invoke-WebRequest -Uri http://localhost:3000/health -UseBasicParsing
+      if ($response.StatusCode -ne 200) { exit 1 }
+      exit 0
+    interval: "1m"
+    timeout: "30s"
+    retries: 2
+    start_delay: "20s"
+
+resource_limits:
+  cpu_threshold: 90              # percent
+  cpu_duration: "5m"             # sustained above threshold for this long triggers restart
+  memory_max: "2GB"              # absolute memory limit (512MB, 2GB, etc.)
+  memory_spike_ratio: 3.0        # current/baseline ratio that triggers restart
+  check_interval: "5s"           # how often to sample CPU/RAM
+
+logging:
+  stdout_file: "stdout.log"
+  stderr_file: "stderr.log"
+  combine_output: false
+  max_size: 104857600          # 100 MB
+  max_age: "720h"              # 30 days
+  max_backups: 10
+  compress: true
+
+notifications:
+  enabled: true
+  events:
+    - "service.crashed"
+    - "health_check.failed"
+    - "resource.threshold_breached"
+  extra_recipients:
+    - "team-lead@example.com"

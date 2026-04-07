@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ELNSSM - Service Manager</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>ELNSSM</h1>
+    <div style="display:flex;gap:12px;align-items:center">
+      <span class="host-resources" id="host-resources" title="Host system resources"></span>
+      <span class="guardian-info" id="guardian-info">Loading...</span>
+      <div class="theme-switcher">
+        <button class="theme-btn" data-t="light" onclick="setTheme('light')" title="Light"></button>
+        <button class="theme-btn active" data-t="dark" onclick="setTheme('dark')" title="Dark"></button>
+        <button class="theme-btn" data-t="neo" onclick="setTheme('neo')" title="Neo"></button>
+      </div>
+      <button class="icon-btn" onclick="showSettingsModal()" title="System Settings">Settings</button>
+      <button class="icon-btn" onclick="showNotificationsModal()" title="Notification Settings">Notifications</button>
+      <button class="icon-btn" onclick="switchView(currentView)">Refresh</button>
+      <button class="btn btn-primary" onclick="showServiceModal()">+ Add Service</button>
+      <button class="icon-btn" onclick="logout()" title="Logout">Logout</button>
+    </div>
+  </header>
+
+  <!-- Navigation -->
+  <nav class="main-nav">
+    <button class="nav-btn active" data-view="services" onclick="switchView('services')">Services</button>
+    <button class="nav-btn" data-view="native" id="nav-native" onclick="switchView('native')" style="display:none">Windows Services</button>
+    <button class="nav-btn" data-view="cluster" id="nav-cluster" onclick="switchView('cluster')" style="display:none">Cluster</button>
+  </nav>
+
+  <!-- View: Services -->
+  <div class="view-panel active" id="view-services">
+    <div id="services-list"></div>
+  </div>
+
+  <!-- View: Native Windows Services -->
+  <div class="view-panel" id="view-native">
+    <div class="native-filter">
+      <input type="text" id="native-filter-input" placeholder="Filter services...">
+    </div>
+    <div id="native-content"></div>
+  </div>
+
+  <!-- View: Cluster -->
+  <div class="view-panel" id="view-cluster">
+    <div id="cluster-content"></div>
+  </div>
+</div>
+
+<!-- Service Modal -->
+<div class="modal-overlay" id="service-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="modal-title">Add Service</h2>
+      <button class="btn btn-secondary" onclick="hideServiceModal()">Close</button>
+    </div>
+    <div class="tabs" id="svc-tabs">
+      <div class="tab active" data-tab="general" onclick="switchTab('general')">General</div>
+      <div class="tab" data-tab="restart" onclick="switchTab('restart')">Restart Policy</div>
+      <div class="tab" data-tab="health" onclick="switchTab('health')">Health Checks</div>
+      <div class="tab" data-tab="hooks" onclick="switchTab('hooks')">Hooks</div>
+      <div class="tab" data-tab="schedules" onclick="switchTab('schedules')">Schedules</div>
+      <div class="tab" data-tab="deps" onclick="switchTab('deps')">Dependencies</div>
+      <div class="tab" data-tab="resources" onclick="switchTab('resources')">Resource Limits</div>
+    </div>
+
+    <!-- Tab: General -->
+    <div class="tab-content active" id="tab-general">
+      <div class="form-row">
+        <div class="form-group"><label>Service ID</label><input type="text" id="f-id" placeholder="my-app"></div>
+        <div class="form-group"><label>Description</label><input type="text" id="f-description" placeholder="My application"></div>
+      </div>
+      <div class="form-group"><label>Executable Path</label><input type="text" id="f-exe" placeholder="C:\path\to\app.exe"></div>
+      <div class="form-group"><label>Arguments (space-separated)</label><input type="text" id="f-args" placeholder="--port 3000 --config app.yaml"></div>
+      <div class="form-group"><label>Working Directory</label><input type="text" id="f-dir" placeholder="C:\path\to\app"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Startup Type</label>
+          <select id="f-startup"><option value="manual">Manual</option><option value="auto">Auto</option><option value="delayed-auto">Delayed Auto</option><option value="disabled">Disabled</option></select>
+        </div>
+        <div class="form-group" id="start-delay-group" style="display:none"><label>Start Delay</label>
+          <input type="text" id="f-start-delay" placeholder="30s">
+        </div>
+        <div class="form-group"><label>Priority</label>
+          <select id="f-priority"><option value="normal">Normal</option><option value="idle">Idle</option><option value="below_normal">Below Normal</option><option value="above_normal">Above Normal</option><option value="high">High</option><option value="realtime">Realtime</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Stop Signal</label>
+          <select id="f-stop-signal"><option value="ctrl_c">CTRL+C</option><option value="ctrl_break">CTRL+BREAK</option><option value="wm_close">WM_CLOSE</option><option value="terminate">Terminate</option></select>
+        </div>
+        <div class="form-group"><label>Stop Timeout</label><input type="text" id="f-stop-timeout" placeholder="30s" value="30s"></div>
+      </div>
+      <div class="form-group"><label>Environment Variables (KEY=VALUE per line)</label><textarea id="f-env" placeholder="NODE_ENV=production&#10;PORT=3000"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Service Account</label><input type="text" id="f-svc-account" placeholder="DOMAIN\user or LocalSystem"></div>
+        <div class="form-group"><label>Password</label><input type="password" id="f-svc-password" placeholder="(encrypted via DPAPI)"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Restart Policy -->
+    <div class="tab-content" id="tab-restart">
+      <div class="form-row">
+        <div class="form-group"><label>Mode</label><select id="f-rp-mode"><option value="on_failure">On Failure</option><option value="always">Always</option><option value="never">Never</option></select></div>
+        <div class="form-group"><label>Delay</label><input type="text" id="f-rp-delay" placeholder="5s" value="5s"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Max Retries (0 = unlimited)</label><input type="number" id="f-rp-max-retries" value="10" min="0"></div>
+        <div class="form-group"><label>Backoff Multiplier</label><input type="number" id="f-rp-backoff" value="2.0" step="0.1" min="1"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Max Backoff</label><input type="text" id="f-rp-max-backoff" placeholder="5m" value="5m"></div>
+        <div class="form-group"><label>Retry Window</label><input type="text" id="f-rp-retry-window" placeholder="30m"></div>
+      </div>
+      <div class="form-group"><label><input type="checkbox" id="f-rp-health-restart"> Restart on Health Check Failure</label></div>
+      <div class="form-group"><label>Scheduled Restart (cron)</label><input type="text" id="f-rp-cron" placeholder="0 3 * * *"></div>
+    </div>
+
+    <!-- Tab: Health Checks -->
+    <div class="tab-content" id="tab-health">
+      <div id="health-checks-list"></div>
+      <button class="btn btn-sm btn-secondary" onclick="addHealthCheck()">+ Add Health Check</button>
+    </div>
+
+    <!-- Tab: Lifecycle Hooks -->
+    <div class="tab-content" id="tab-hooks">
+      <div class="section-title">Pre-Start</div>
+      <div class="form-row">
+        <div class="form-group"><label>Command</label><input type="text" id="f-hook-pre_start-cmd" placeholder="powershell"></div>
+        <div class="form-group"><label>Arguments</label><input type="text" id="f-hook-pre_start-args" placeholder="-File C:\scripts\prepare.ps1"></div>
+      </div>
+      <div class="form-group"><label>Inline Script (alternative to command)</label><textarea id="f-hook-pre_start-script" placeholder="Write-Host 'Preparing...'"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Timeout</label><input type="text" id="f-hook-pre_start-timeout" value="30s"></div>
+        <div class="form-group"><label>On Failure</label>
+          <select id="f-hook-pre_start-onfail"><option value="continue">Continue</option><option value="abort">Abort</option></select>
+        </div>
+      </div>
+
+      <div class="section-title">Post-Start</div>
+      <div class="form-row">
+        <div class="form-group"><label>Command</label><input type="text" id="f-hook-post_start-cmd" placeholder="curl"></div>
+        <div class="form-group"><label>Arguments</label><input type="text" id="f-hook-post_start-args" placeholder="http://localhost:8080/warmup"></div>
+      </div>
+      <div class="form-group"><label>Inline Script</label><textarea id="f-hook-post_start-script" placeholder="Invoke-WebRequest -Uri http://localhost:8080/warmup"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Timeout</label><input type="text" id="f-hook-post_start-timeout" value="30s"></div>
+        <div class="form-group"><label>On Failure</label>
+          <select id="f-hook-post_start-onfail"><option value="continue">Continue</option><option value="abort">Abort</option></select>
+        </div>
+      </div>
+
+      <div class="section-title">Pre-Stop</div>
+      <div class="form-row">
+        <div class="form-group"><label>Command</label><input type="text" id="f-hook-pre_stop-cmd" placeholder="curl"></div>
+        <div class="form-group"><label>Arguments</label><input type="text" id="f-hook-pre_stop-args" placeholder="http://localhost:8080/drain"></div>
+      </div>
+      <div class="form-group"><label>Inline Script</label><textarea id="f-hook-pre_stop-script" placeholder="curl http://localhost:8080/drain"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Timeout</label><input type="text" id="f-hook-pre_stop-timeout" value="30s"></div>
+        <div class="form-group"><label>On Failure</label>
+          <select id="f-hook-pre_stop-onfail"><option value="continue">Continue</option><option value="abort">Abort</option></select>
+        </div>
+      </div>
+
+      <div class="section-title">Post-Stop</div>
+      <div class="form-row">
+        <div class="form-group"><label>Command</label><input type="text" id="f-hook-post_stop-cmd" placeholder="cleanup.bat"></div>
+        <div class="form-group"><label>Arguments</label><input type="text" id="f-hook-post_stop-args"></div>
+      </div>
+      <div class="form-group"><label>Inline Script</label><textarea id="f-hook-post_stop-script"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Timeout</label><input type="text" id="f-hook-post_stop-timeout" value="30s"></div>
+        <div class="form-group"><label>On Failure</label>
+          <select id="f-hook-post_stop-onfail"><option value="continue">Continue</option><option value="abort">Abort</option></select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Schedules -->
+    <div class="tab-content" id="tab-schedules">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">
+        Schedule automatic start/stop/restart actions using cron expressions.<br>
+        Format: minute hour day-of-month month day-of-week (e.g. <code>0 8 * * MON-FRI</code>)
+      </p>
+      <div id="schedules-list"></div>
+      <button class="btn btn-sm btn-secondary" onclick="addSchedule()">+ Add Schedule</button>
+    </div>
+
+    <!-- Tab: Dependencies -->
+    <div class="tab-content" id="tab-deps">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">
+        Define services that must be running or healthy before this service starts.
+      </p>
+      <div id="deps-list"></div>
+      <button class="btn btn-sm btn-secondary" onclick="addDependency()">+ Add Dependency</button>
+    </div>
+
+    <!-- Tab: Resource Limits -->
+    <div class="tab-content" id="tab-resources">
+      <div class="form-row">
+        <div class="form-group"><label>CPU Threshold (%)</label><input type="number" id="f-rl-cpu" placeholder="90" min="0" max="100" step="1"></div>
+        <div class="form-group"><label>CPU Duration</label><input type="text" id="f-rl-cpu-dur" placeholder="5m"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Memory Max</label><input type="number" id="f-rl-mem-val" placeholder="512" min="0"></div>
+        <div class="form-group"><label>Unit</label><select id="f-rl-mem-unit"><option value="MB">MB</option><option value="GB">GB</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Memory Spike Ratio</label><input type="number" id="f-rl-spike" placeholder="3.0" step="0.1" min="0"></div>
+        <div class="form-group"><label>Check Interval</label><input type="text" id="f-rl-interval" placeholder="5s" value="5s"></div>
+      </div>
+    </div>
+
+    <div class="actions" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-secondary" onclick="hideServiceModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitService()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal (System) -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2>System Settings</h2>
+      <button class="btn btn-secondary" onclick="hideSettingsModal()">Close</button>
+    </div>
+
+    <div class="section-title">Guardian</div>
+    <div class="form-group"><label><input type="checkbox" id="s-native-services"> Enable Native Windows Service Management</label></div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Allows viewing and controlling native Windows SCM services. Requires restart.</p>
+
+    <div class="section-title">Cluster</div>
+    <div class="form-row">
+      <div class="form-group"><label>Role</label>
+        <select id="s-cluster-role" onchange="updateClusterFields()">
+          <option value="standalone">Standalone</option>
+          <option value="master">Master</option>
+          <option value="slave">Slave</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Node Name</label>
+        <input type="text" id="s-cluster-node-name" placeholder="my-server">
+      </div>
+    </div>
+    <div id="cluster-slave-fields" style="display:none">
+      <div class="form-row">
+        <div class="form-group"><label>Master Address</label>
+          <input type="text" id="s-cluster-master-addr" placeholder="192.168.1.10:9100">
+        </div>
+        <div class="form-group"><label>Master Token</label>
+          <input type="password" id="s-cluster-master-token" placeholder="Token to authenticate with master">
+        </div>
+      </div>
+      <div class="form-group"><label>Heartbeat Interval</label>
+        <input type="text" id="s-cluster-heartbeat" value="30s" placeholder="30s">
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Cluster changes require a Guardian restart to take effect.</p>
+
+    <div class="section-title">Guardian Service</div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Restart the Guardian service to apply settings that require it. Running child processes will continue and be re-adopted after restart.</p>
+    <button class="btn btn-danger" onclick="restartGuardian()" id="btn-restart-guardian">Restart Guardian</button>
+
+    <div class="actions" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-secondary" onclick="hideSettingsModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSystemSettings()">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<!-- Notifications Modal -->
+<div class="modal-overlay" id="notifications-modal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2>Notification Settings</h2>
+      <button class="btn btn-secondary" onclick="hideNotificationsModal()">Close</button>
+    </div>
+
+    <div class="section-title">Email (SMTP)</div>
+    <div class="form-group"><label><input type="checkbox" id="s-smtp-enabled"> Enabled</label></div>
+    <div class="form-row">
+      <div class="form-group"><label>Host</label><input type="text" id="s-smtp-host" placeholder="smtp.example.com"></div>
+      <div class="form-group"><label>Port</label><input type="number" id="s-smtp-port" value="587"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Username</label><input type="text" id="s-smtp-user" placeholder="user@example.com"></div>
+      <div class="form-group"><label>Password</label><input type="password" id="s-smtp-pass"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>From</label><input type="text" id="s-smtp-from" placeholder="elnssm@example.com"></div>
+      <div class="form-group"><label><input type="checkbox" id="s-smtp-tls" checked> Use TLS</label></div>
+    </div>
+    <div class="form-group"><label>Recipients (one per line)</label><textarea id="s-smtp-recipients" placeholder="admin@example.com"></textarea></div>
+
+    <div class="section-title">Telegram Bot</div>
+    <div class="form-group"><label><input type="checkbox" id="s-tg-enabled"> Enabled</label></div>
+    <div class="form-group"><label>Bot Token</label><input type="text" id="s-tg-token" placeholder="123456:ABC-DEF..."></div>
+    <div class="form-group"><label>Chat IDs (one per line)</label><textarea id="s-tg-chats" placeholder="-1001234567890"></textarea></div>
+
+    <div class="section-title">ntfy.sh</div>
+    <div class="form-group"><label><input type="checkbox" id="s-ntfy-enabled"> Enabled</label></div>
+    <div class="form-row">
+      <div class="form-group"><label>Server</label><input type="text" id="s-ntfy-server" placeholder="https://ntfy.sh" value="https://ntfy.sh"></div>
+      <div class="form-group"><label>Topic</label><input type="text" id="s-ntfy-topic" placeholder="elnssm-alerts"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Access Token</label><input type="password" id="s-ntfy-token" placeholder="(optional)"></div>
+      <div class="form-group"><label>Priority</label>
+        <select id="s-ntfy-priority"><option value="default">Default</option><option value="min">Min</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Tags (emoji)</label><input type="text" id="s-ntfy-tags" placeholder="warning,rotating_light"></div>
+      <div class="form-group"><label>Email Forward</label><input type="text" id="s-ntfy-email" placeholder="admin@example.com (optional)"></div>
+    </div>
+
+    <div class="section-title">Webhooks</div>
+    <div id="webhook-list"></div>
+    <button class="btn btn-sm btn-secondary" onclick="addWebhook()">+ Add Webhook</button>
+
+    <div class="section-title">General</div>
+    <div class="form-group"><label>Notification Cooldown</label><input type="text" id="s-cooldown" value="5m" placeholder="5m"></div>
+
+    <div class="actions" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-secondary" onclick="hideNotificationsModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNotifications()">Save Notifications</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal-overlay" id="log-modal">
+  <div class="modal" style="max-width:920px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="log-title">Logs</h2>
+      <button class="btn btn-secondary" onclick="hideLogModal()">Close</button>
+    </div>
+    <div class="log-viewer" id="log-content">Loading logs...</div>
+  </div>
+</div>
+
+<!-- Performance Modal -->
+<div class="modal-overlay" id="perf-modal">
+  <div class="modal" style="max-width:920px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="perf-title">Performance</h2>
+      <button class="btn btn-secondary" onclick="hidePerformanceModal()">Close</button>
+    </div>
+    <div class="perf-controls">
+      <label style="font-size:13px;color:var(--text-secondary)">Time Range:</label>
+      <select id="perf-range">
+        <option value="1h">Last Hour</option>
+        <option value="6h">Last 6 Hours</option>
+        <option value="24h">Last 24 Hours</option>
+        <option value="168h">Last 7 Days</option>
+        <option value="720h">Last 30 Days</option>
+      </select>
+    </div>
+    <div class="perf-container">
+      <div class="perf-canvas-wrap">
+        <canvas id="perf-canvas"></canvas>
+      </div>
+      <div class="perf-legend">
+        <span class="leg-cpu">CPU</span>
+        <span class="leg-mem">Memory</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Login Modal -->
+<div class="modal-overlay" id="login-modal">
+  <div class="modal" style="max-width:400px">
+    <h2>Authentication Required</h2>
+    <div class="form-group"><label>API Token</label><input type="password" id="login-token" placeholder="Paste your API token"></div>
+    <div id="login-error" style="color:var(--danger);font-size:13px;margin-bottom:10px;display:none"></div>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn btn-primary" onclick="submitLogin()">Login</button>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts: load order matters -->
+<script src="/js/utils.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/theme.js"></script>
+<script src="/js/resources.js"></script>
+<script src="/js/health-checks.js"></script>
+<script src="/js/hooks.js"></script>
+<script src="/js/schedules.js"></script>
+<script src="/js/dependencies.js"></script>
+<script src="/js/service-modal.js"></script>
+<script src="/js/services.js"></script>
+<script src="/js/settings.js"></script>
+<script src="/js/notifications.js"></script>
+<script src="/js/logs.js"></script>
+<script src="/js/native-services.js"></script>
+<script src="/js/cluster.js"></script>
+<script src="/js/performance.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

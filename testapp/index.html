@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ELNSSM Test App</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e1e4ed;
+    --muted: #8b8fa3;
+    --green: #22c55e;
+    --red: #ef4444;
+    --orange: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h1 .tag {
+    font-size: 0.7rem;
+    background: var(--blue);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 0.9rem; }
+  .status-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 0.85rem;
+  }
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.off { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .card h2 {
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-bottom: 14px;
+    line-height: 1.4;
+  }
+  .card .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    color: white;
+  }
+  button:hover { opacity: 0.85; }
+  button:active { transform: scale(0.97); }
+  .btn-red { background: var(--red); }
+  .btn-orange { background: var(--orange); color: #000; }
+  .btn-blue { background: var(--blue); }
+  .btn-green { background: var(--green); color: #000; }
+  .btn-purple { background: var(--purple); }
+  .btn-muted { background: var(--border); color: var(--text); }
+  input[type="number"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--text);
+    width: 70px;
+    font-size: 0.82rem;
+  }
+  .log-area {
+    margin-top: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .log-area h2 { font-size: 0.95rem; margin-bottom: 10px; }
+  #log {
+    background: #000;
+    color: #aaa;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.78rem;
+    padding: 12px;
+    border-radius: 6px;
+    height: 200px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+  #log .ok { color: var(--green); }
+  #log .err { color: var(--red); }
+  #log .warn { color: var(--orange); }
+  .endpoints {
+    margin-top: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 0.82rem;
+  }
+  .endpoints h2 { font-size: 0.95rem; margin-bottom: 8px; }
+  .endpoints code {
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+  .endpoints table { width: 100%; border-collapse: collapse; }
+  .endpoints td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .endpoints td:first-child { color: var(--muted); width: 120px; }
+</style>
+</head>
+<body>
+
+<h1>ELNSSM Test App <span class="tag">TEST SERVICE</span></h1>
+<p class="subtitle">Controllable dummy service for testing ELNSSM scenarios</p>
+
+<div class="status-bar" id="statusBar">
+  <div class="status-item">Health: <span class="dot" id="dotHealth"></span> <span id="txtHealth">-</span></div>
+  <div class="status-item">API: <span class="dot" id="dotApi"></span> <span id="txtApi">-</span></div>
+  <div class="status-item">PID: <span id="txtPid">-</span></div>
+  <div class="status-item">Uptime: <span id="txtUptime">-</span></div>
+  <div class="status-item">Memory: <span id="txtMem">-</span> MB</div>
+  <div class="status-item">Ballast: <span id="txtBallast">-</span> chunks</div>
+</div>
+
+<div class="grid">
+  <!-- Crash & Exit -->
+  <div class="card">
+    <h2>Process Termination</h2>
+    <p>Terminate the process in various ways to test ELNSSM restart behavior and notifications.</p>
+    <div class="actions">
+      <button class="btn-red" onclick="action('/action/crash')">Crash (exit 1)</button>
+      <button class="btn-red" onclick="action('/action/panic')">Panic</button>
+      <button class="btn-orange" onclick="action('/action/exit?code='+document.getElementById('exitCode').value)">Exit code:</button>
+      <input type="number" id="exitCode" value="0" min="0" max="255">
+    </div>
+  </div>
+
+  <!-- Health Toggle -->
+  <div class="card">
+    <h2>Health Endpoint</h2>
+    <p>Toggle <code>/health</code> between 200 OK and 503 Service Unavailable. Use for ELNSSM HTTP health checks.</p>
+    <div class="actions">
+      <button class="btn-green" id="btnHealth" onclick="action('/action/toggle-health')">Toggle Health</button>
+    </div>
+  </div>
+
+  <!-- API Toggle -->
+  <div class="card">
+    <h2>API / Curl Endpoint</h2>
+    <p>Toggle <code>/api/check</code> on/off. Test with: <code>curl http://127.0.0.1:8550/api/check</code></p>
+    <div class="actions">
+      <button class="btn-blue" id="btnApi" onclick="action('/action/toggle-api')">Toggle API</button>
+    </div>
+  </div>
+
+  <!-- Hang -->
+  <div class="card">
+    <h2>Hang / Freeze</h2>
+    <p>Make the process unresponsive. Tests ELNSSM health check timeout and process kill.</p>
+    <div class="actions">
+      <button class="btn-orange" onclick="action('/action/hang')">Hang Process</button>
+    </div>
+  </div>
+
+  <!-- Log Spam -->
+  <div class="card">
+    <h2>Log Spam</h2>
+    <p>Toggle continuous output to stderr/stdout. Tests ELNSSM log capture and rotation.</p>
+    <div class="actions">
+      <button class="btn-purple" id="btnStderr" onclick="action('/action/stderr-spam')">Toggle Stderr</button>
+      <button class="btn-muted" id="btnStdout" onclick="action('/action/stdout-spam')">Toggle Stdout</button>
+    </div>
+  </div>
+
+  <!-- Memory -->
+  <div class="card">
+    <h2>Memory Pressure</h2>
+    <p>Allocate 50 MB chunks to simulate memory leaks. Free all to release.</p>
+    <div class="actions">
+      <button class="btn-orange" onclick="action('/action/memory-leak')">+50 MB</button>
+      <button class="btn-green" onclick="action('/action/free-memory')">Free All</button>
+    </div>
+  </div>
+
+  <!-- CPU -->
+  <div class="card">
+    <h2>CPU Hog</h2>
+    <p>Burn all CPU cores for N seconds. Tests resource monitoring.</p>
+    <div class="actions">
+      <button class="btn-red" onclick="action('/action/cpu-hog?seconds='+document.getElementById('cpuSecs').value)">Burn CPU</button>
+      <input type="number" id="cpuSecs" value="10" min="1" max="120"> <span style="color:var(--muted);font-size:0.8rem">sec</span>
+    </div>
+  </div>
+
+  <!-- Slow Shutdown -->
+  <div class="card">
+    <h2>Slow Shutdown</h2>
+    <p>Set a delay before the process exits on SIGTERM/SIGINT. Tests ELNSSM kill timeout.</p>
+    <div class="actions">
+      <button class="btn-blue" onclick="action('/action/slow-shutdown?seconds='+document.getElementById('shutdownSecs').value)">Set Delay</button>
+      <input type="number" id="shutdownSecs" value="30" min="0" max="300"> <span style="color:var(--muted);font-size:0.8rem">sec</span>
+      <button class="btn-muted" onclick="action('/action/slow-shutdown?seconds=0')">Reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- Action Log -->
+<div class="log-area">
+  <h2>Action Log</h2>
+  <div id="log"></div>
+</div>
+
+<!-- Endpoints Reference -->
+<div class="endpoints">
+  <h2>Endpoints</h2>
+  <table>
+    <tr><td>Health</td><td><code>GET /health</code> &rarr; 200 / 503</td></tr>
+    <tr><td>API Check</td><td><code>GET /api/check</code> &rarr; 200 / 503</td></tr>
+    <tr><td>Status</td><td><code>GET /api/status</code> &rarr; JSON state</td></tr>
+    <tr><td>Crash</td><td><code>POST /action/crash</code></td></tr>
+    <tr><td>Panic</td><td><code>POST /action/panic</code></td></tr>
+    <tr><td>Exit</td><td><code>POST /action/exit?code=N</code></td></tr>
+    <tr><td>Hang</td><td><code>POST /action/hang</code></td></tr>
+    <tr><td>Health Toggle</td><td><code>POST /action/toggle-health</code></td></tr>
+    <tr><td>API Toggle</td><td><code>POST /action/toggle-api</code></td></tr>
+  </table>
+</div>
+
+<script>
+const logEl = document.getElementById('log');
+
+function logMsg(msg, cls) {
+  const ts = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.className = cls || '';
+  line.textContent = `[${ts}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function action(url) {
+  try {
+    logMsg(`>> ${url}`, 'warn');
+    const res = await fetch(url, { method: 'POST' });
+    const text = await res.text();
+    logMsg(`<< ${res.status} ${text}`, res.ok ? 'ok' : 'err');
+    refreshStatus();
+  } catch (e) {
+    logMsg(`!! ${e.message}`, 'err');
+  }
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const s = await res.json();
+
+    document.getElementById('dotHealth').className = 'dot ' + (s.healthy ? 'on' : 'off');
+    document.getElementById('txtHealth').textContent = s.healthy ? 'OK' : 'UNHEALTHY';
+
+    document.getElementById('dotApi').className = 'dot ' + (s.api_enabled ? 'on' : 'off');
+    document.getElementById('txtApi').textContent = s.api_enabled ? 'ON' : 'OFF';
+
+    document.getElementById('txtPid').textContent = s.pid;
+    document.getElementById('txtUptime').textContent = s.uptime;
+    document.getElementById('txtMem').textContent = s.alloc_mb;
+    document.getElementById('txtBallast').textContent = s.memory_ballast;
+
+    // Update button labels
+    document.getElementById('btnStderr').textContent = s.stderr_spamming ? 'Stop Stderr' : 'Toggle Stderr';
+    document.getElementById('btnStdout').textContent = s.stdout_spamming ? 'Stop Stdout' : 'Toggle Stdout';
+  } catch (e) {
+    document.getElementById('dotHealth').className = 'dot off';
+    document.getElementById('txtHealth').textContent = 'UNREACHABLE';
+    document.getElementById('dotApi').className = 'dot off';
+    document.getElementById('txtApi').textContent = 'UNREACHABLE';
+  }
+}
+
+// Poll status
+refreshStatus();
+setInterval(refreshStatus, 2000);
+logMsg('Test app UI loaded', 'ok');
+</script>
+
+</body>
+</html>

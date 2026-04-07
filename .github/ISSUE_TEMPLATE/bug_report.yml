@@ -1,0 +1,89 @@
+name: Bug report
+description: Report a defect in ELNSSM
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill out the
+        sections below as completely as you can. Vague reports are likely to
+        be closed.
+
+  - type: input
+    id: version
+    attributes:
+      label: ELNSSM version
+      description: Output of `elnssm version`
+      placeholder: "v0.1.0 (commit abc1234)"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: e.g. "Windows 11 23H2" or "Windows Server 2022"
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Architecture
+      options:
+        - amd64
+        - arm64
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Clear description of the actual behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, complete reproduction steps.
+      placeholder: |
+        1. Install ELNSSM with `elnssm install`
+        2. Add a service with `elnssm add ...`
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Service / global config
+      description: Minimal YAML that reproduces the issue. Redact secrets.
+      render: yaml
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Excerpt from `%ProgramData%\ELNSSM\logs\guardian.log`
+      render: shell
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
