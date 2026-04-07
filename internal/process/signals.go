@@ -12,14 +12,20 @@ var (
 	procGenerateConsoleCtrlEvent = modkernel32.NewProc("GenerateConsoleCtrlEvent")
 )
 
+// Windows console control event identifiers.
+const (
+	ctrlCEvent     uint32 = 0
+	ctrlBreakEvent uint32 = 1
+)
+
 // SendCtrlC sends a CTRL_C_EVENT to a process group.
 func SendCtrlC(pid uint32) error {
-	return sendCtrlEvent(0, pid) // CTRL_C_EVENT = 0
+	return sendCtrlEvent(ctrlCEvent, pid)
 }
 
 // SendCtrlBreak sends a CTRL_BREAK_EVENT to a process group.
 func SendCtrlBreak(pid uint32) error {
-	return sendCtrlEvent(1, pid) // CTRL_BREAK_EVENT = 1
+	return sendCtrlEvent(ctrlBreakEvent, pid)
 }
 
 func sendCtrlEvent(event, pid uint32) error {
@@ -40,22 +46,23 @@ func SendWMClose(pid uint32) error {
 
 	moduser32 := windows.NewLazySystemDLL("user32.dll")
 	procEnumWindows := moduser32.NewProc("EnumWindows")
-	procGetWindowThreadProcessId := moduser32.NewProc("GetWindowThreadProcessId")
+	procGetWindowThreadProcessID := moduser32.NewProc("GetWindowThreadProcessId")
 	procPostMessage := moduser32.NewProc("PostMessageW")
 
-	const WM_CLOSE = 0x0010
+	const wmClose uintptr = 0x0010
 
+	// Returning 1 from the callback continues enumeration.
 	callback := windows.NewCallback(func(hwnd uintptr, lparam uintptr) uintptr {
 		var windowPid uint32
-		procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&windowPid)))
+		_, _, _ = procGetWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&windowPid))) //nolint:gosec // Win32 API binding
 		if windowPid == uint32(lparam) {
 			found = true
-			r1, _, err := procPostMessage.Call(hwnd, WM_CLOSE, 0, 0)
+			r1, _, err := procPostMessage.Call(hwnd, wmClose, 0, 0)
 			if r1 == 0 {
 				lastErr = fmt.Errorf("PostMessage WM_CLOSE: %w", err)
 			}
 		}
-		return 1 // continue enumeration
+		return 1
 	})
 
 	r1, _, err := procEnumWindows.Call(callback, uintptr(pid))

@@ -125,7 +125,6 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if updates.Cluster != nil {
 		if updates.Cluster.Role != "" {
 			s.cfg.Cluster.Role = updates.Cluster.Role
-			needsRestart = true
 		}
 		if updates.Cluster.MasterAddr != "" {
 			s.cfg.Cluster.MasterAddr = updates.Cluster.MasterAddr

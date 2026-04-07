@@ -1,3 +1,6 @@
+// Package api implements the HTTP REST and WebSocket interface that
+// the CLI and the embedded web GUI use to talk to the Guardian. It
+// includes IP whitelisting, authentication, and per-resource handlers.
 package api
 
 import (
@@ -7,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/hilman2/ELNSSM/internal/cluster"
 	"github.com/hilman2/ELNSSM/internal/config"
 	"github.com/hilman2/ELNSSM/internal/logging"
@@ -15,7 +20,6 @@ import (
 	"github.com/hilman2/ELNSSM/internal/sspi"
 	"github.com/hilman2/ELNSSM/internal/store"
 	"github.com/hilman2/ELNSSM/internal/web"
-	"github.com/go-chi/chi/v5"
 )
 
 // Restarter is the interface for triggering a Guardian restart.
@@ -63,8 +67,9 @@ func NewServer(cfg *config.Config, mgr *manager.Manager, s store.Store, streamer
 
 	router := srv.buildRouter()
 	srv.server = &http.Server{
-		Addr:    cfg.API.Listen,
-		Handler: router,
+		Addr:              cfg.API.Listen,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// Set up connection tracking for SSPI

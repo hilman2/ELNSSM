@@ -39,7 +39,7 @@ func (c *HTTPChecker) Check(ctx context.Context) model.HealthCheckResult {
 		method = "GET"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.cfg.Target, nil)
+	req, err := http.NewRequestWithContext(ctx, method, c.cfg.Target, http.NoBody)
 	if err != nil {
 		return model.HealthCheckResult{
 			CheckType: model.HealthCheckHTTP,

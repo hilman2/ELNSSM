@@ -5,8 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hilman2/ELNSSM/internal/config"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/hilman2/ELNSSM/internal/config"
 )
 
 func TestWriteJSON(t *testing.T) {
@@ -44,7 +45,7 @@ func TestWriteError(t *testing.T) {
 }
 
 func TestExtractIP_RemoteAddr(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.1:12345"
 	ip := extractIP(r)
 	if ip != "192.168.1.1" {
@@ -53,7 +54,7 @@ func TestExtractIP_RemoteAddr(t *testing.T) {
 }
 
 func TestExtractIP_IgnoresXForwardedFor(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.1:12345"
 	r.Header.Set("X-Forwarded-For", "10.0.0.1, 10.0.0.2")
 	ip := extractIP(r)
@@ -63,7 +64,7 @@ func TestExtractIP_IgnoresXForwardedFor(t *testing.T) {
 }
 
 func TestExtractIP_IgnoresXRealIP(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.1:12345"
 	r.Header.Set("X-Real-IP", "172.16.0.1")
 	ip := extractIP(r)
@@ -79,7 +80,7 @@ func TestIPWhitelist_Allowed(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "127.0.0.1:12345"
 	handler.ServeHTTP(w, r)
 
@@ -95,7 +96,7 @@ func TestIPWhitelist_Blocked(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "10.0.0.1:12345"
 	handler.ServeHTTP(w, r)
 
@@ -111,7 +112,7 @@ func TestIPWhitelist_EmptyDeniesAll(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "8.8.8.8:12345"
 	handler.ServeHTTP(w, r)
 
@@ -126,7 +127,7 @@ func TestSecurityHeaders(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	handler.ServeHTTP(w, r)
 
 	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
@@ -147,7 +148,7 @@ func TestAuthMiddleware_Disabled(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "127.0.0.1:12345"
 	handler.ServeHTTP(w, r)
 
@@ -166,7 +167,7 @@ func TestAuthMiddleware_ValidBearerToken(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.10:12345"
 	r.Header.Set("Authorization", "Bearer "+token)
 	handler.ServeHTTP(w, r)
@@ -185,7 +186,7 @@ func TestAuthMiddleware_InvalidBearerToken(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.10:12345"
 	r.Header.Set("Authorization", "Bearer wrong-token")
 	handler.ServeHTTP(w, r)
@@ -204,7 +205,7 @@ func TestAuthMiddleware_MissingAuth(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.10:12345"
 	handler.ServeHTTP(w, r)
 
@@ -225,7 +226,7 @@ func TestAuthMiddleware_ValidBasicAuth(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.10:12345"
 	r.SetBasicAuth("admin", "secret")
 	handler.ServeHTTP(w, r)
@@ -244,7 +245,7 @@ func TestAuthMiddleware_InvalidBasicAuth(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/", http.NoBody)
 	r.RemoteAddr = "192.168.1.10:12345"
 	r.SetBasicAuth("admin", "wrong")
 	handler.ServeHTTP(w, r)
@@ -264,7 +265,7 @@ func TestAuthMiddleware_WebSocketQueryToken(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?token="+token, nil)
+	r := httptest.NewRequest("GET", "/?token="+token, http.NoBody)
 	r.RemoteAddr = "192.168.1.10:12345"
 	r.Header.Set("Upgrade", "websocket")
 	r.Header.Set("Connection", "Upgrade")

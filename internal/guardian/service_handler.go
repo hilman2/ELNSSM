@@ -4,8 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/hilman2/ELNSSM/internal/config"
 	"golang.org/x/sys/windows/svc"
+
+	"github.com/hilman2/ELNSSM/internal/config"
 )
 
 const serviceName = "ELNSSM"

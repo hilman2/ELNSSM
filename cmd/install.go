@@ -7,10 +7,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/hilman2/ELNSSM/internal/config"
-	"github.com/hilman2/ELNSSM/internal/guardian"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/hilman2/ELNSSM/internal/config"
+	"github.com/hilman2/ELNSSM/internal/guardian"
 )
 
 var installCmd = &cobra.Command{
@@ -51,7 +52,7 @@ var installCmd = &cobra.Command{
 
 		// Create data directories
 		for _, dir := range []string{cfg.ServicesDir(), cfg.LogsDir()} {
-			if err := os.MkdirAll(dir, 0755); err != nil {
+			if err := os.MkdirAll(dir, 0o750); err != nil {
 				slog.Warn("Could not create directory", "path", dir, "error", err)
 			}
 		}

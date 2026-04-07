@@ -55,7 +55,7 @@ func (j *JobObject) SetKillOnClose(kill bool) error {
 	_, err := windows.SetInformationJobObject(
 		j.handle,
 		windows.JobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(&info)),
+		uintptr(unsafe.Pointer(&info)), //nolint:gosec // Win32 API binding
 		uint32(unsafe.Sizeof(info)),
 	)
 	if err != nil {

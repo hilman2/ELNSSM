@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/hilman2/ELNSSM/internal/config"
 	"github.com/hilman2/ELNSSM/internal/model"
-	"github.com/spf13/cobra"
 )
 
 var (

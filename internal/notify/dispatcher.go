@@ -1,3 +1,6 @@
+// Package notify dispatches ELNSSM events to the configured external
+// notification channels (SMTP, generic webhooks, Slack/Discord,
+// Telegram, ntfy) with cooldown and templating support.
 package notify
 
 import (

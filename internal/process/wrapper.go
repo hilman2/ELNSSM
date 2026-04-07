@@ -1,10 +1,15 @@
+// Package process wraps managed services as child processes: it owns
+// process startup, signal-based shutdown, Windows Job Objects for guaranteed
+// process-tree termination, lifecycle hooks and resource monitoring.
 package process
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os/exec"
 	"strings"
 	"sync"
@@ -12,8 +17,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/hilman2/ELNSSM/internal/model"
 	"golang.org/x/sys/windows"
+
+	"github.com/hilman2/ELNSSM/internal/model"
 )
 
 // ExitResult holds the outcome of a process exit.
@@ -65,7 +71,9 @@ func (w *Wrapper) Start(ctx context.Context) error {
 	innerCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
 
-	cmd := exec.CommandContext(innerCtx, w.config.Executable, w.config.Arguments...)
+	// Launching the user-configured service executable is the
+	// entire purpose of ELNSSM; gosec G204 does not apply.
+	cmd := exec.CommandContext(innerCtx, w.config.Executable, w.config.Arguments...) //nolint:gosec // user-configured service executable
 	cmd.Dir = w.config.WorkingDir
 
 	// Set environment
@@ -91,7 +99,7 @@ func (w *Wrapper) Start(ctx context.Context) error {
 	// Set up pipes
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		job.Close()
+		_ = job.Close()
 		cancel()
 		return fmt.Errorf("creating stdout pipe: %w", err)
 	}
@@ -99,7 +107,7 @@ func (w *Wrapper) Start(ctx context.Context) error {
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		job.Close()
+		_ = job.Close()
 		cancel()
 		return fmt.Errorf("creating stderr pipe: %w", err)
 	}
@@ -107,7 +115,7 @@ func (w *Wrapper) Start(ctx context.Context) error {
 
 	// Start process
 	if err := cmd.Start(); err != nil {
-		job.Close()
+		_ = job.Close()
 		cancel()
 		return fmt.Errorf("starting process: %w", err)
 	}
@@ -115,11 +123,17 @@ func (w *Wrapper) Start(ctx context.Context) error {
 	w.cmd = cmd
 	w.pid = cmd.Process.Pid
 
+	// Windows process IDs always fit in uint32; cmd.Process.Pid is
+	// declared as int only because os.Process.Pid is portable.
+	if w.pid < 0 || w.pid > math.MaxUint32 {
+		return fmt.Errorf("invalid PID %d", w.pid)
+	}
+
 	// Assign to Job Object
 	processHandle, err := windows.OpenProcess(
 		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
 		false,
-		uint32(w.pid),
+		uint32(w.pid), //nolint:gosec // bounded above
 	)
 	if err != nil {
 		slog.Warn("Could not open process for job assignment", "pid", w.pid, "error", err)
@@ -127,12 +141,12 @@ func (w *Wrapper) Start(ctx context.Context) error {
 		if err := job.Assign(processHandle); err != nil {
 			slog.Warn("Could not assign process to job object", "pid", w.pid, "error", err)
 		}
-		windows.CloseHandle(processHandle)
+		_ = windows.CloseHandle(processHandle)
 	}
 
 	// Set process priority
 	if w.config.Priority != "" && w.config.Priority != model.PriorityNormal {
-		setPriority(uint32(w.pid), w.config.Priority)
+		setPriority(uint32(w.pid), w.config.Priority) //nolint:gosec // bounded above
 	}
 
 	w.running = true
@@ -144,13 +158,15 @@ func (w *Wrapper) Start(ctx context.Context) error {
 		crashed := false
 
 		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
+			var exitErr *exec.ExitError
+			switch {
+			case errors.As(err, &exitErr):
 				exitCode = exitErr.ExitCode()
 				crashed = true
-			} else if innerCtx.Err() != nil {
+			case innerCtx.Err() != nil:
 				// Context cancelled (intentional stop)
 				crashed = false
-			} else {
+			default:
 				crashed = true
 			}
 		}
@@ -177,7 +193,11 @@ func (w *Wrapper) Stop(ctx context.Context) error {
 		w.mu.Unlock()
 		return nil
 	}
-	pid := uint32(w.pid)
+	if w.pid < 0 || w.pid > math.MaxUint32 {
+		w.mu.Unlock()
+		return fmt.Errorf("invalid PID %d", w.pid)
+	}
+	pid := uint32(w.pid) //nolint:gosec // bounded above
 	w.mu.Unlock()
 
 	timeout := w.config.StopTimeout
@@ -271,8 +291,8 @@ func (w *Wrapper) Close() {
 	}
 	if w.jobObject != nil {
 		// Ensure processes are killed when handle closes during normal shutdown
-		w.jobObject.SetKillOnClose(true)
-		w.jobObject.Close()
+		_ = w.jobObject.SetKillOnClose(true)
+		_ = w.jobObject.Close()
 	}
 }
 
@@ -299,7 +319,7 @@ func (w *Wrapper) Detach() {
 
 	// Release job object WITHOUT kill-on-close (process survives)
 	if w.jobObject != nil {
-		w.jobObject.Close()
+		_ = w.jobObject.Close()
 		w.jobObject = nil
 	}
 
@@ -315,12 +335,15 @@ func (w *Wrapper) Adopt(pid int) error {
 	if w.running {
 		return fmt.Errorf("wrapper already has a running process")
 	}
+	if pid < 0 || pid > math.MaxUint32 {
+		return fmt.Errorf("invalid PID %d", pid)
+	}
 
 	// Verify the process is still alive
 	handle, err := windows.OpenProcess(
 		windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.SYNCHRONIZE,
 		false,
-		uint32(pid),
+		uint32(pid), //nolint:gosec // bounded above
 	)
 	if err != nil {
 		return fmt.Errorf("process %d not found: %w", pid, err)
@@ -329,14 +352,14 @@ func (w *Wrapper) Adopt(pid int) error {
 	// Check if the process has already exited
 	ret, _ := windows.WaitForSingleObject(handle, 0)
 	if ret != uint32(windows.WAIT_TIMEOUT) {
-		windows.CloseHandle(handle)
+		_ = windows.CloseHandle(handle)
 		return fmt.Errorf("process %d has already exited", pid)
 	}
 
 	// Create new Job Object and assign process
 	job, err := NewJobObject()
 	if err != nil {
-		windows.CloseHandle(handle)
+		_ = windows.CloseHandle(handle)
 		return fmt.Errorf("creating job object: %w", err)
 	}
 
@@ -351,11 +374,11 @@ func (w *Wrapper) Adopt(pid int) error {
 
 	// Monitor the process for exit using the handle
 	go func() {
-		windows.WaitForSingleObject(handle, windows.INFINITE)
+		_, _ = windows.WaitForSingleObject(handle, windows.INFINITE)
 
 		var exitCode uint32
-		windows.GetExitCodeProcess(handle, &exitCode)
-		windows.CloseHandle(handle)
+		_ = windows.GetExitCodeProcess(handle, &exitCode)
+		_ = windows.CloseHandle(handle)
 
 		w.mu.Lock()
 		w.running = false
@@ -401,8 +424,8 @@ func buildEnvBlock(svcEnv map[string]string) []string {
 }
 
 var (
-	modAdvapi32     = windows.NewLazySystemDLL("advapi32.dll")
-	procLogonUserW  = modAdvapi32.NewProc("LogonUserW")
+	modAdvapi32    = windows.NewLazySystemDLL("advapi32.dll")
+	procLogonUserW = modAdvapi32.NewProc("LogonUserW")
 )
 
 // logonServiceUser performs Windows LogonUser for run-as-user support.
@@ -430,12 +453,12 @@ func logonServiceUser(account, encryptedPassword string) (syscall.Token, error) 
 	passwordPtr, _ := syscall.UTF16PtrFromString(password)
 
 	ret, _, callErr := procLogonUserW.Call(
-		uintptr(unsafe.Pointer(userPtr)),
-		uintptr(unsafe.Pointer(domainPtr)),
-		uintptr(unsafe.Pointer(passwordPtr)),
+		uintptr(unsafe.Pointer(userPtr)),     //nolint:gosec // Win32 API binding
+		uintptr(unsafe.Pointer(domainPtr)),   //nolint:gosec // Win32 API binding
+		uintptr(unsafe.Pointer(passwordPtr)), //nolint:gosec // Win32 API binding
 		uintptr(logon32LogonService),
 		uintptr(logon32ProviderDefault),
-		uintptr(unsafe.Pointer(&token)),
+		uintptr(unsafe.Pointer(&token)), //nolint:gosec // Win32 API binding
 	)
 	if ret == 0 {
 		return 0, fmt.Errorf("LogonUser: %w", callErr)
@@ -451,7 +474,7 @@ func setPriority(pid uint32, priority model.ProcessPriority) {
 		slog.Debug("Could not open process for priority", "error", err)
 		return
 	}
-	defer windows.CloseHandle(handle)
+	defer func() { _ = windows.CloseHandle(handle) }()
 
 	var class uint32
 	switch priority {

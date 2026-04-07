@@ -21,7 +21,7 @@ type memoryStatusEx struct {
 }
 
 var (
-	procGetSystemTimes      = modKernel32.NewProc("GetSystemTimes")
+	procGetSystemTimes       = modKernel32.NewProc("GetSystemTimes")
 	procGlobalMemoryStatusEx = modKernel32.NewProc("GlobalMemoryStatusEx")
 )
 
@@ -85,9 +85,9 @@ func (hm *HostMonitor) takeSample() {
 	// CPU via GetSystemTimes
 	var idleTime, kernelTime, userTime [8]byte // FILETIME = 8 bytes
 	ret, _, _ := procGetSystemTimes.Call(
-		uintptr(unsafe.Pointer(&idleTime)),
-		uintptr(unsafe.Pointer(&kernelTime)),
-		uintptr(unsafe.Pointer(&userTime)),
+		uintptr(unsafe.Pointer(&idleTime)),   //nolint:gosec // Win32 API binding
+		uintptr(unsafe.Pointer(&kernelTime)), //nolint:gosec // Win32 API binding
+		uintptr(unsafe.Pointer(&userTime)),   //nolint:gosec // Win32 API binding
 	)
 	if ret != 0 {
 		idle := filetimeToInt64FromBytes(idleTime)
@@ -112,10 +112,11 @@ func (hm *HostMonitor) takeSample() {
 	// RAM via GlobalMemoryStatusEx
 	var memStatus memoryStatusEx
 	memStatus.Length = uint32(unsafe.Sizeof(memStatus))
-	ret, _, _ = procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&memStatus)))
+	ret, _, _ = procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&memStatus))) //nolint:gosec // Win32 API binding
 	if ret != 0 {
-		sample.MemoryTotal = int64(memStatus.TotalPhys)
-		sample.MemoryUsed = int64(memStatus.TotalPhys - memStatus.AvailPhys)
+		// Physical RAM in bytes fits comfortably in int64 (~9.2 EB max).
+		sample.MemoryTotal = int64(memStatus.TotalPhys)                      //nolint:gosec // see comment above
+		sample.MemoryUsed = int64(memStatus.TotalPhys - memStatus.AvailPhys) //nolint:gosec // see comment above
 		sample.MemoryPercent = float64(memStatus.MemoryLoad)
 	}
 

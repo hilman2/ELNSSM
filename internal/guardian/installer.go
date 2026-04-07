@@ -19,12 +19,12 @@ func Install() error {
 	if err != nil {
 		return fmt.Errorf("connecting to service manager (are you running as administrator?): %w", err)
 	}
-	defer m.Disconnect()
+	defer func() { _ = m.Disconnect() }()
 
 	// Check if already installed
 	s, err := m.OpenService(serviceName)
 	if err == nil {
-		s.Close()
+		_ = s.Close()
 		return fmt.Errorf("service %q is already installed", serviceName)
 	}
 
@@ -37,7 +37,7 @@ func Install() error {
 	if err != nil {
 		return fmt.Errorf("creating service: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Set recovery actions: restart on failure
 	recoveryActions := []mgr.RecoveryAction{
@@ -64,13 +64,13 @@ func Uninstall() error {
 	if err != nil {
 		return fmt.Errorf("connecting to service manager (are you running as administrator?): %w", err)
 	}
-	defer m.Disconnect()
+	defer func() { _ = m.Disconnect() }()
 
 	s, err := m.OpenService(serviceName)
 	if err != nil {
 		return fmt.Errorf("service %q is not installed", serviceName)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.Delete(); err != nil {
 		return fmt.Errorf("deleting service: %w", err)

@@ -35,15 +35,17 @@ func ExecuteHook(ctx context.Context, hook *model.LifecycleHook, env map[string]
 		if err != nil {
 			return "", fmt.Errorf("writing temp script: %w", err)
 		}
-		defer os.Remove(tmpFile)
+		defer func() { _ = os.Remove(tmpFile) }()
 
+		// Lifecycle hook scripts are explicitly user-configured;
+		// running them is the entire point of this code path.
 		if strings.HasSuffix(tmpFile, ".ps1") {
-			cmd = exec.CommandContext(ctx, "powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile)
+			cmd = exec.CommandContext(ctx, "powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile) //nolint:gosec // user-configured lifecycle hook
 		} else {
-			cmd = exec.CommandContext(ctx, "cmd", "/C", tmpFile)
+			cmd = exec.CommandContext(ctx, "cmd", "/C", tmpFile) //nolint:gosec // user-configured lifecycle hook
 		}
 	} else if hook.Command != "" {
-		cmd = exec.CommandContext(ctx, hook.Command, hook.Args...)
+		cmd = exec.CommandContext(ctx, hook.Command, hook.Args...) //nolint:gosec // user-configured lifecycle hook
 	} else {
 		return "", nil // No command or script configured
 	}
@@ -68,7 +70,7 @@ func writeTempScript(body string) (string, error) {
 	}
 
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("elnssm-hook-%d%s", time.Now().UnixNano(), ext))
-	if err := os.WriteFile(tmpFile, []byte(body), 0600); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(body), 0o600); err != nil {
 		return "", err
 	}
 	return tmpFile, nil

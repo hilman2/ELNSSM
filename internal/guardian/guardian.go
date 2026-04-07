@@ -1,3 +1,6 @@
+// Package guardian is the long-running root process of ELNSSM. It hosts
+// the Windows service handler, owns the manager, the API server and all
+// shared subsystems, and provides install/uninstall helpers for the SCM.
 package guardian
 
 import (
@@ -39,7 +42,7 @@ func New(cfg *config.Config) (*Guardian, error) {
 	}
 
 	if err := s.RunMigrations(); err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("running migrations: %w", err)
 	}
 

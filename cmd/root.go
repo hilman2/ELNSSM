@@ -1,3 +1,6 @@
+// Package cmd contains the cobra-based command-line interface that
+// drives ELNSSM. It is also the entry point used when the binary is
+// invoked by the Windows Service Control Manager.
 package cmd
 
 import (

@@ -51,16 +51,18 @@ func (c *ScriptChecker) Check(ctx context.Context) model.HealthCheckResult {
 				Message:   fmt.Sprintf("failed to write temp script: %v", err),
 			}
 		}
-		defer os.Remove(tmpFile)
+		defer func() { _ = os.Remove(tmpFile) }()
 
+		// Health check scripts are explicitly user-configured;
+		// this whole feature exists to run them.
 		if strings.HasSuffix(tmpFile, ".ps1") {
-			cmd = exec.CommandContext(ctx, "powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile)
+			cmd = exec.CommandContext(ctx, "powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile) //nolint:gosec // user-configured health check
 		} else {
-			cmd = exec.CommandContext(ctx, "cmd", "/C", tmpFile)
+			cmd = exec.CommandContext(ctx, "cmd", "/C", tmpFile) //nolint:gosec // user-configured health check
 		}
 	} else {
-		// Legacy: single command in Target field
-		cmd = exec.CommandContext(ctx, "cmd", "/C", c.cfg.Target)
+		// Legacy: single command in Target field, also user-configured.
+		cmd = exec.CommandContext(ctx, "cmd", "/C", c.cfg.Target) //nolint:gosec // user-configured health check
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -94,7 +96,7 @@ func (c *ScriptChecker) writeTempScript(body string) (string, error) {
 	}
 
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("elnssm-hc-%d%s", time.Now().UnixNano(), ext))
-	if err := os.WriteFile(tmpFile, []byte(body), 0600); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(body), 0o600); err != nil {
 		return "", err
 	}
 	return tmpFile, nil

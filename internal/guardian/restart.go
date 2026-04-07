@@ -28,10 +28,10 @@ func writeRestartState(dataDir string, orphans map[string]int) error {
 	}
 
 	path := restartStatePath(dataDir)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("writing restart state: %w", err)
 	}
 	return nil
@@ -58,5 +58,5 @@ func readRestartState(dataDir string) (map[string]int, error) {
 
 // clearRestartState removes the state file after successful adoption.
 func clearRestartState(dataDir string) {
-	os.Remove(restartStatePath(dataDir))
+	_ = os.Remove(restartStatePath(dataDir))
 }

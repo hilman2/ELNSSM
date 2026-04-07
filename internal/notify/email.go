@@ -54,7 +54,10 @@ func (n *EmailNotifier) Send(event model.Event) error {
 }
 
 func sendMailTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte, host string) error {
-	tlsConfig := &tls.Config{ServerName: host}
+	tlsConfig := &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+	}
 	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("TLS dial: %w", err)
@@ -64,7 +67,7 @@ func sendMailTLS(addr string, auth smtp.Auth, from string, to []string, msg []by
 	if err != nil {
 		return fmt.Errorf("SMTP client: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if auth != nil {
 		if err := client.Auth(auth); err != nil {

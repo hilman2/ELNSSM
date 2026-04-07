@@ -1,13 +1,16 @@
+// Package scheduler runs cron-style schedules attached to managed
+// services and triggers configured actions (start, stop, restart)
+// at the requested times.
 package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 
-	"github.com/hilman2/ELNSSM/internal/model"
 	"github.com/robfig/cron/v3"
+
+	"github.com/hilman2/ELNSSM/internal/model"
 )
 
 // ServiceController is the interface the scheduler uses to control services.
@@ -97,7 +100,7 @@ func (s *Scheduler) ListEntries() []ScheduleInfo {
 
 // ScheduleInfo holds information about a scheduled entry.
 type ScheduleInfo struct {
-	ServiceID string    `json:"service_id"`
+	ServiceID string      `json:"service_id"`
 	Next      interface{} `json:"next"`
 	Prev      interface{} `json:"prev"`
 }
@@ -141,6 +144,6 @@ func (s *Scheduler) updateServiceJobs(svc *model.Service) {
 
 		s.entryIDs[svc.ID] = append(s.entryIDs[svc.ID], entryID)
 		slog.Info("Schedule registered", "service", svc.ID, "cron", schedule.Cron, "action", schedule.Action,
-			"name", fmt.Sprintf("%s", schedule.Name))
+			"name", schedule.Name)
 	}
 }

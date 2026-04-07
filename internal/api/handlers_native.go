@@ -3,8 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/hilman2/ELNSSM/internal/winservice"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/hilman2/ELNSSM/internal/winservice"
 )
 
 func (s *Server) handleListNativeServices(w http.ResponseWriter, r *http.Request) {

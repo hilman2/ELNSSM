@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -88,7 +89,7 @@ func (c *TCPChecker) Check(ctx context.Context) model.HealthCheckResult {
 	if c.cfg.ExpectResp != "" {
 		buf := make([]byte, 4096)
 		n, err := conn.Read(buf)
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return model.HealthCheckResult{
 				CheckType: model.HealthCheckTCP,
 				Status:    model.HealthStatusUnhealthy,

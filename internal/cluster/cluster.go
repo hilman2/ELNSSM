@@ -1,3 +1,6 @@
+// Package cluster implements the master/agent clustering layer for
+// running ELNSSM across multiple nodes with a single management entry
+// point. It handles node registration, heartbeating and request proxying.
 package cluster
 
 import (

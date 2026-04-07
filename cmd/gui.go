@@ -14,7 +14,8 @@ var guiCmd = &cobra.Command{
 		addr := apiAddr()
 		url := fmt.Sprintf("http://%s", addr)
 		fmt.Printf("Opening %s ...\n", url)
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start() //nolint:gosec // url is built from local config
+
 	},
 }
 

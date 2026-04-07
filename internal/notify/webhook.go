@@ -2,6 +2,7 @@ package notify
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -82,8 +83,17 @@ func (n *WebhookNotifier) Send(event model.Event) error {
 
 func (n *WebhookNotifier) renderBody(event model.Event) (string, error) {
 	if n.cfg.BodyTemplate == "" {
-		return fmt.Sprintf(`{"event":"%s","service":"%s","message":"%s","timestamp":"%s"}`,
-			event.Type, event.ServiceID, event.Message, event.Timestamp.Format(time.RFC3339)), nil
+		payload := map[string]string{
+			"event":     string(event.Type),
+			"service":   event.ServiceID,
+			"message":   event.Message,
+			"timestamp": event.Timestamp.Format(time.RFC3339),
+		}
+		buf, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("marshaling default webhook body: %w", err)
+		}
+		return string(buf), nil
 	}
 
 	tmpl, err := template.New("webhook").Parse(n.cfg.BodyTemplate)

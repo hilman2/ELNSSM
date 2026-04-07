@@ -3,18 +3,19 @@ package process
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
 var (
-	modCrypt32          = windows.NewLazySystemDLL("crypt32.dll")
+	modCrypt32             = windows.NewLazySystemDLL("crypt32.dll")
 	procCryptProtectData   = modCrypt32.NewProc("CryptProtectData")
 	procCryptUnprotectData = modCrypt32.NewProc("CryptUnprotectData")
 
-	modKernel32ForCred  = windows.NewLazySystemDLL("kernel32.dll")
-	procLocalFree       = modKernel32ForCred.NewProc("LocalFree")
+	modKernel32ForCred = windows.NewLazySystemDLL("kernel32.dll")
+	procLocalFree      = modKernel32ForCred.NewProc("LocalFree")
 )
 
 // CRYPTPROTECT_LOCAL_MACHINE makes the encrypted data machine-bound.
@@ -30,8 +31,12 @@ func newDataBlob(data []byte) *dataBlob {
 	if len(data) == 0 {
 		return &dataBlob{}
 	}
+	// DPAPI blobs are at most a few KB; len(data) cannot overflow uint32 in practice.
+	if len(data) > math.MaxUint32 {
+		return &dataBlob{}
+	}
 	return &dataBlob{
-		cbData: uint32(len(data)),
+		cbData: uint32(len(data)), //nolint:gosec // bounded above
 		pbData: &data[0],
 	}
 }
@@ -40,12 +45,12 @@ func (b *dataBlob) toBytes() []byte {
 	if b.cbData == 0 || b.pbData == nil {
 		return nil
 	}
-	return unsafe.Slice(b.pbData, b.cbData)
+	return unsafe.Slice(b.pbData, b.cbData) //nolint:gosec // Win32 DPAPI binding
 }
 
 func (b *dataBlob) free() {
 	if b.pbData != nil {
-		procLocalFree.Call(uintptr(unsafe.Pointer(b.pbData)))
+		_, _, _ = procLocalFree.Call(uintptr(unsafe.Pointer(b.pbData))) //nolint:gosec // Win32 API binding
 	}
 }
 
@@ -61,13 +66,13 @@ func EncryptPassword(plaintext string) (string, error) {
 	var outputBlob dataBlob
 
 	ret, _, err := procCryptProtectData.Call(
-		uintptr(unsafe.Pointer(inputBlob)),
-		0, // description
-		0, // optional entropy
-		0, // reserved
-		0, // prompt struct
+		uintptr(unsafe.Pointer(inputBlob)), //nolint:gosec // Win32 API binding
+		0,                                  // description
+		0,                                  // optional entropy
+		0,                                  // reserved
+		0,                                  // prompt struct
 		uintptr(cryptprotectLocalMachine),
-		uintptr(unsafe.Pointer(&outputBlob)),
+		uintptr(unsafe.Pointer(&outputBlob)), //nolint:gosec // Win32 API binding
 	)
 	if ret == 0 {
 		return "", fmt.Errorf("CryptProtectData failed: %w", err)
@@ -95,13 +100,13 @@ func DecryptPassword(encrypted string) (string, error) {
 	var outputBlob dataBlob
 
 	ret, _, callErr := procCryptUnprotectData.Call(
-		uintptr(unsafe.Pointer(inputBlob)),
-		0, // description
-		0, // optional entropy
-		0, // reserved
-		0, // prompt struct
+		uintptr(unsafe.Pointer(inputBlob)), //nolint:gosec // Win32 API binding
+		0,                                  // description
+		0,                                  // optional entropy
+		0,                                  // reserved
+		0,                                  // prompt struct
 		uintptr(cryptprotectLocalMachine),
-		uintptr(unsafe.Pointer(&outputBlob)),
+		uintptr(unsafe.Pointer(&outputBlob)), //nolint:gosec // Win32 API binding
 	)
 	if ret == 0 {
 		return "", fmt.Errorf("CryptUnprotectData failed: %w", callErr)

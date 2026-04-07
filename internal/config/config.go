@@ -1,3 +1,6 @@
+// Package config loads and writes the YAML configuration files used by
+// ELNSSM (the global Guardian config plus per-service definitions) and
+// supports hot-reloading them via fsnotify.
 package config
 
 import (
@@ -8,8 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hilman2/ELNSSM/internal/process"
 	"gopkg.in/yaml.v3"
+
+	"github.com/hilman2/ELNSSM/internal/process"
 )
 
 // Config is the global ELNSSM configuration.
@@ -175,7 +179,7 @@ func Load(path string) (*Config, error) {
 
 // Save writes the configuration to a YAML file.
 func (c *Config) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
@@ -184,7 +188,7 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 

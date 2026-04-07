@@ -1,3 +1,6 @@
+// Package manager orchestrates managed services: state transitions,
+// crash-loop detection, dependency-aware start/stop ordering and
+// integration with the health, notify and logging subsystems.
 package manager
 
 import (
@@ -9,6 +12,8 @@ import (
 
 	"path/filepath"
 
+	"github.com/google/uuid"
+
 	"github.com/hilman2/ELNSSM/internal/config"
 	"github.com/hilman2/ELNSSM/internal/health"
 	"github.com/hilman2/ELNSSM/internal/logging"
@@ -17,7 +22,6 @@ import (
 	"github.com/hilman2/ELNSSM/internal/process"
 	"github.com/hilman2/ELNSSM/internal/scheduler"
 	"github.com/hilman2/ELNSSM/internal/store"
-	"github.com/google/uuid"
 )
 
 // Manager orchestrates all managed services.
@@ -494,7 +498,7 @@ func (m *Manager) startService(_ context.Context, ms *ManagedService) error {
 		output, err := process.ExecuteHook(lifecycleCtx, ms.Config.Hooks.PreStart, ms.Config.Environment)
 		if err != nil {
 			m.emitEvent(lifecycleCtx, model.EventHookFailed, ms.Config.ID,
-				fmt.Sprintf("pre_start hook failed: %v (output: %s)", err, truncateStr(output, 200)))
+				fmt.Sprintf("pre_start hook failed: %v (output: %s)", err, truncateStr(output)))
 			if ms.Config.Hooks.PreStart.OnFailure == "abort" {
 				ms.Config.State = model.ServiceStateFailed
 				ms.Config.LastError = fmt.Sprintf("pre_start hook failed: %v", err)
@@ -543,7 +547,7 @@ func (m *Manager) startService(_ context.Context, ms *ManagedService) error {
 			output, err := process.ExecuteHook(lifecycleCtx, ms.Config.Hooks.PostStart, ms.Config.Environment)
 			if err != nil {
 				m.emitEvent(lifecycleCtx, model.EventHookFailed, ms.Config.ID,
-					fmt.Sprintf("post_start hook failed: %v (output: %s)", err, truncateStr(output, 200)))
+					fmt.Sprintf("post_start hook failed: %v (output: %s)", err, truncateStr(output)))
 			} else {
 				m.emitEvent(lifecycleCtx, model.EventHookExecuted, ms.Config.ID, "post_start hook completed")
 			}
@@ -596,7 +600,7 @@ func (m *Manager) stopService(_ context.Context, ms *ManagedService) error {
 		output, err := process.ExecuteHook(context.Background(), ms.Config.Hooks.PreStop, ms.Config.Environment)
 		if err != nil {
 			m.emitEvent(m.ctx, model.EventHookFailed, ms.Config.ID,
-				fmt.Sprintf("pre_stop hook failed: %v (output: %s)", err, truncateStr(output, 200)))
+				fmt.Sprintf("pre_stop hook failed: %v (output: %s)", err, truncateStr(output)))
 		} else {
 			m.emitEvent(m.ctx, model.EventHookExecuted, ms.Config.ID, "pre_stop hook completed")
 		}
@@ -646,7 +650,7 @@ func (m *Manager) stopService(_ context.Context, ms *ManagedService) error {
 		output, err := process.ExecuteHook(context.Background(), ms.Config.Hooks.PostStop, ms.Config.Environment)
 		if err != nil {
 			m.emitEvent(m.ctx, model.EventHookFailed, ms.Config.ID,
-				fmt.Sprintf("post_stop hook failed: %v (output: %s)", err, truncateStr(output, 200)))
+				fmt.Sprintf("post_stop hook failed: %v (output: %s)", err, truncateStr(output)))
 		} else {
 			m.emitEvent(m.ctx, model.EventHookExecuted, ms.Config.ID, "post_stop hook completed")
 		}
@@ -886,14 +890,17 @@ func (m *Manager) monitorService(ctx context.Context, ms *ManagedService) {
 			}
 
 		case <-perfTicker.C:
-			// Persist resource sample for performance graphs
+			// Persist resource sample for performance graphs.
+			// Errors here are non-fatal: a missed sample is acceptable.
 			if ms.ResourceMonitor != nil {
 				sample := ms.ResourceMonitor.Latest()
-				m.store.AppendResourceSample(ctx, ms.Config.ID, model.ResourceSample{
+				if err := m.store.AppendResourceSample(ctx, ms.Config.ID, model.ResourceSample{
 					Timestamp:   sample.Timestamp,
 					CPUPercent:  sample.CPUPercent,
 					MemoryBytes: sample.MemoryBytes,
-				})
+				}); err != nil {
+					slog.Debug("Failed to persist resource sample", "service", ms.Config.ID, "error", err)
+				}
 			}
 
 		case <-ms.stopCh:
@@ -957,11 +964,15 @@ func (m *Manager) saveRuntimeState(ctx context.Context, ms *ManagedService) {
 	}
 }
 
-func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
+// hookOutputMaxLen is the maximum length of captured hook output included
+// in event messages. Longer output is truncated with an ellipsis.
+const hookOutputMaxLen = 200
+
+func truncateStr(s string) string {
+	if len(s) <= hookOutputMaxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return s[:hookOutputMaxLen] + "..."
 }
 
 func (m *Manager) emitEvent(ctx context.Context, eventType model.EventType, serviceID, message string) {

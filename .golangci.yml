@@ -10,34 +10,49 @@ run:
 linters:
   default: none
   enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - misspell
-    - revive
-    - unconvert
-    - unparam
     - bodyclose
     - copyloopvar
     - durationcheck
+    - errcheck
     - errorlint
     - gocritic
     - gosec
+    - govet
+    - ineffassign
+    - misspell
     - nilerr
     - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
     - whitespace
   settings:
-    revive:
-      rules:
-        - name: var-naming
-        - name: package-comments
-          disabled: true
+    errcheck:
+      # Fire-and-forget functions whose error is not actionable.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - (net.Conn).SetWriteDeadline
+        - (net.Conn).SetReadDeadline
+        - (*github.com/gorilla/websocket.Conn).Close
+        - (*github.com/gorilla/websocket.Conn).SetWriteDeadline
+        - (*github.com/gorilla/websocket.Conn).SetReadDeadline
+        - (*encoding/json.Encoder).Encode
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Sscanf
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF*"  # disable opinionated quick-fix suggestions
     gosec:
       excludes:
         - G104  # already covered by errcheck
-        - G304  # file-path-from-variable: too noisy for a service manager
+        - G304  # file path from variable: a service manager intentionally reads user-defined paths
     gocritic:
       enabled-tags:
         - diagnostic
@@ -46,15 +61,27 @@ linters:
       disabled-checks:
         - ifElseChain
         - hugeParam
+        - rangeValCopy      # perf hint, not a bug; structs are < 200B
+        - unnamedResult     # stylistic
+        - paramTypeCombine  # stylistic
+    revive:
+      rules:
+        - name: var-naming
+        - name: package-comments
+          disabled: true
   exclusions:
+    generated: lax
     paths:
       - internal/web/dist
+      - testapp
     rules:
+      # tests are allowed to ignore errors and run subprocesses
       - path: _test\.go
         linters:
           - errcheck
           - gosec
           - unparam
+      # cmd/ is intentionally less strict (cobra command wiring)
       - path: cmd/
         linters:
           - gocritic

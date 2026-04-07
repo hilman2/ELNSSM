@@ -1,3 +1,6 @@
+// Package store defines the persistence interface used by the manager
+// for runtime state and event history, and provides a bbolt-backed
+// implementation along with simple schema migrations.
 package store
 
 import (

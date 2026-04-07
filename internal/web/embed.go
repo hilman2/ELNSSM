@@ -1,3 +1,5 @@
+// Package web embeds the static assets of the ELNSSM web GUI and
+// exposes a single HTTP handler that serves them with SPA routing.
 package web
 
 import "embed"

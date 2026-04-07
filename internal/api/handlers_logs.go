@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/hilman2/ELNSSM/internal/logging"
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
+
+	"github.com/hilman2/ELNSSM/internal/logging"
 )
 
 var upgrader = websocket.Upgrader{
@@ -62,7 +63,7 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(content))
+	_, _ = w.Write([]byte(content))
 }
 
 func (s *Server) handleDownloadLog(w http.ResponseWriter, r *http.Request) {

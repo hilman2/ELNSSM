@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/hilman2/ELNSSM/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/hilman2/ELNSSM/internal/config"
 )
 
 var resetTokenCmd = &cobra.Command{

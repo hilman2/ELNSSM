@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -101,7 +100,16 @@ func main() {
 	fmt.Printf("[testapp] starting on http://127.0.0.1:%s\n", port)
 	fmt.Printf("[testapp] health: http://127.0.0.1:%s/health\n", port)
 	fmt.Printf("[testapp] api:    http://127.0.0.1:%s/api/check\n", port)
-	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, mux))
+
+	srv := &http.Server{
+		Addr:              "0.0.0.0:" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 // ---------- Handlers ----------
@@ -143,15 +151,15 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	runtime.ReadMemStats(&memStats)
 
 	resp := map[string]any{
-		"healthy":          state.healthy,
-		"api_enabled":      state.apiEnabled,
-		"stderr_spamming":  state.stderrSpamming,
-		"stdout_spamming":  state.stdoutSpamming,
-		"memory_ballast":   len(state.memBallast),
-		"alloc_mb":         memStats.Alloc / 1024 / 1024,
+		"healthy":           state.healthy,
+		"api_enabled":       state.apiEnabled,
+		"stderr_spamming":   state.stderrSpamming,
+		"stdout_spamming":   state.stdoutSpamming,
+		"memory_ballast":    len(state.memBallast),
+		"alloc_mb":          memStats.Alloc / 1024 / 1024,
 		"slow_shutdown_sec": state.slowShutdownSec,
-		"uptime":           time.Since(state.startTime).Round(time.Second).String(),
-		"pid":              os.Getpid(),
+		"uptime":            time.Since(state.startTime).Round(time.Second).String(),
+		"pid":               os.Getpid(),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -290,8 +298,6 @@ func handleStdoutSpam(w http.ResponseWriter, r *http.Request) {
 	}()
 	fmt.Fprint(w, `{"stdout_spamming":true}`)
 }
-
-var memLeakCounter atomic.Int64
 
 func handleMemoryLeak(w http.ResponseWriter, r *http.Request) {
 	state.mu.Lock()

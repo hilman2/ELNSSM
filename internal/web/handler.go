@@ -13,7 +13,7 @@ func SPAHandler() http.Handler {
 		// No embedded assets (development mode), return placeholder
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<!DOCTYPE html>
+			_, _ = w.Write([]byte(`<!DOCTYPE html>
 <html>
 <head><title>ELNSSM</title></head>
 <body>
@@ -35,7 +35,7 @@ func SPAHandler() http.Handler {
 			// Check if file exists
 			f, err := fsys.Open(strings.TrimPrefix(path, "/"))
 			if err == nil {
-				f.Close()
+				_ = f.Close()
 				fileServer.ServeHTTP(w, r)
 				return
 			}

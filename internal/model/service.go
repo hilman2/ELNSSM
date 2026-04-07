@@ -1,3 +1,5 @@
+// Package model defines the core domain types used across ELNSSM
+// (services, health checks, events and runtime state).
 package model
 
 import "time"
@@ -57,14 +59,14 @@ const (
 
 // RestartPolicyConfig defines how a service should be restarted.
 type RestartPolicyConfig struct {
-	Mode               RestartMode   `yaml:"mode" json:"mode"`
-	Delay              time.Duration `yaml:"delay" json:"delay"`
-	MaxRetries         int           `yaml:"max_retries" json:"max_retries"`
-	RetryWindow        time.Duration `yaml:"retry_window" json:"retry_window"`
-	BackoffMultiplier  float64       `yaml:"backoff_multiplier" json:"backoff_multiplier"`
-	MaxBackoff         time.Duration `yaml:"max_backoff" json:"max_backoff"`
-	RestartOnHealthFail bool         `yaml:"restart_on_health_fail" json:"restart_on_health_fail"`
-	ScheduledRestart   string        `yaml:"scheduled_restart" json:"scheduled_restart"`
+	Mode                RestartMode   `yaml:"mode" json:"mode"`
+	Delay               time.Duration `yaml:"delay" json:"delay"`
+	MaxRetries          int           `yaml:"max_retries" json:"max_retries"`
+	RetryWindow         time.Duration `yaml:"retry_window" json:"retry_window"`
+	BackoffMultiplier   float64       `yaml:"backoff_multiplier" json:"backoff_multiplier"`
+	MaxBackoff          time.Duration `yaml:"max_backoff" json:"max_backoff"`
+	RestartOnHealthFail bool          `yaml:"restart_on_health_fail" json:"restart_on_health_fail"`
+	ScheduledRestart    string        `yaml:"scheduled_restart" json:"scheduled_restart"`
 }
 
 // HealthCheckType identifies the kind of health check.

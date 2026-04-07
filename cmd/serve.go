@@ -8,9 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/hilman2/ELNSSM/internal/config"
 	"github.com/hilman2/ELNSSM/internal/guardian"
-	"github.com/spf13/cobra"
 )
 
 var serveCmd = &cobra.Command{

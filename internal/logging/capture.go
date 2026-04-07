@@ -1,3 +1,6 @@
+// Package logging captures stdout/stderr from managed services, rotates
+// the resulting log files via lumberjack and streams new log lines to
+// connected WebSocket clients in real time.
 package logging
 
 import (
@@ -43,7 +46,7 @@ func NewCapture(serviceID, logDir string, cfg CaptureConfig, streamer *Streamer)
 
 // Start begins capturing stdout and stderr from the given readers.
 func (c *Capture) Start(stdout, stderr io.ReadCloser) {
-	if err := os.MkdirAll(c.logDir, 0755); err != nil {
+	if err := os.MkdirAll(c.logDir, 0o750); err != nil {
 		slog.Error("Failed to create log directory", "dir", c.logDir, "error", err)
 		return
 	}
@@ -97,7 +100,10 @@ func (c *Capture) captureStream(stream string, reader io.ReadCloser, logger *lum
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		lineWithNewline := append(line, '\n')
+		// Allocate a fresh slice to avoid aliasing the scanner's internal buffer.
+		lineWithNewline := make([]byte, len(line)+1)
+		copy(lineWithNewline, line)
+		lineWithNewline[len(line)] = '\n'
 
 		// Write to log file
 		if _, err := logger.Write(lineWithNewline); err != nil {
@@ -117,7 +123,7 @@ func (c *Capture) Close() {
 	defer c.mu.Unlock()
 
 	for _, w := range c.writers {
-		w.Close()
+		_ = w.Close()
 	}
 	c.writers = nil
 }

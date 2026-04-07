@@ -84,7 +84,7 @@ func TestLoadConfig_FileNotFound(t *testing.T) {
 
 func TestLoadConfig_InvalidYAML(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.yaml")
-	os.WriteFile(path, []byte("{{{{invalid yaml!!!!"), 0644)
+	os.WriteFile(path, []byte("{{{{invalid yaml!!!!"), 0o644)
 
 	_, err := Load(path)
 	if err == nil {
@@ -157,7 +157,7 @@ logging:
   max_backups: 5
   compress: true
 `
-	os.WriteFile(path, []byte(yaml), 0644)
+	os.WriteFile(path, []byte(yaml), 0o644)
 
 	svc, err := LoadServiceConfig(path)
 	if err != nil {
@@ -198,7 +198,7 @@ id: "bad"
 executable: "test.exe"
 stop_timeout: "not-a-duration"
 `
-	os.WriteFile(path, []byte(yaml), 0644)
+	os.WriteFile(path, []byte(yaml), 0o644)
 
 	_, err := LoadServiceConfig(path)
 	if err == nil {
@@ -229,9 +229,9 @@ func TestLoadAllServiceConfigs_NonExistentDir(t *testing.T) {
 
 func TestLoadAllServiceConfigs_SkipsNonYAML(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "svc.yaml"), []byte("id: svc\nexecutable: test.exe"), 0644)
-	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("not a config"), 0644)
-	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(dir, "svc.yaml"), []byte("id: svc\nexecutable: test.exe"), 0o644)
+	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("not a config"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "subdir"), 0o755)
 
 	services, err := LoadAllServiceConfigs(dir)
 	if err != nil {

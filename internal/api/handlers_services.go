@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/hilman2/ELNSSM/internal/model"
 	"github.com/hilman2/ELNSSM/internal/process"
-	"github.com/go-chi/chi/v5"
 )
 
 func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {

@@ -1,3 +1,6 @@
+// Package sspi provides Windows SSPI Negotiate / NTLM authentication
+// for the ELNSSM API server. It binds the Win32 secur32.dll surface
+// needed to accept clients via Integrated Windows Authentication.
 package sspi
 
 import (
@@ -182,7 +185,7 @@ func CompleteSession(sess *Session, ctx *SecHandle) error {
 	if err != nil {
 		return err
 	}
-	defer token.Close()
+	defer func() { _ = token.Close() }()
 
 	admin, err := IsAdmin(token)
 	if err != nil {

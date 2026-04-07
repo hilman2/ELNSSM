@@ -9,8 +9,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/hilman2/ELNSSM/internal/model"
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/hilman2/ELNSSM/internal/model"
 )
 
 var (
@@ -29,11 +30,11 @@ type BoltStore struct {
 
 // NewBoltStore opens or creates a bbolt database at the given path.
 func NewBoltStore(path string) (*BoltStore, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("creating database directory: %w", err)
 	}
 
-	db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 5 * time.Second})
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -48,7 +49,7 @@ func NewBoltStore(path string) (*BoltStore, error) {
 		return nil
 	})
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 

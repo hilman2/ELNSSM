@@ -3,13 +3,15 @@ package process
 import (
 	"context"
 	"log/slog"
+	"math"
 	"sort"
 	"sync"
 	"time"
 	"unsafe"
 
-	"github.com/hilman2/ELNSSM/internal/model"
 	"golang.org/x/sys/windows"
+
+	"github.com/hilman2/ELNSSM/internal/model"
 )
 
 // PROCESS_MEMORY_COUNTERS_EX holds memory info from K32GetProcessMemoryInfo.
@@ -28,7 +30,7 @@ type processMemoryCountersEx struct {
 }
 
 var (
-	modKernel32                = windows.NewLazySystemDLL("kernel32.dll")
+	modKernel32                 = windows.NewLazySystemDLL("kernel32.dll")
 	procK32GetProcessMemoryInfo = modKernel32.NewProc("K32GetProcessMemoryInfo")
 )
 
@@ -47,18 +49,18 @@ type ResourceBreach struct {
 
 // ResourceMonitorConfig configures the resource monitor.
 type ResourceMonitorConfig struct {
-	PID            int
-	Limits         model.ResourceLimits
-	CheckInterval  time.Duration
-	GracePeriod    time.Duration // startup grace period before evaluation
+	PID           int
+	Limits        model.ResourceLimits
+	CheckInterval time.Duration
+	GracePeriod   time.Duration // startup grace period before evaluation
 }
 
 // ResourceMonitor periodically samples CPU% and RAM for a process.
 type ResourceMonitor struct {
-	cfg       ResourceMonitorConfig
-	breachCh  chan ResourceBreach
-	latest    ResourceSample
-	mu        sync.RWMutex
+	cfg      ResourceMonitorConfig
+	breachCh chan ResourceBreach
+	latest   ResourceSample
+	mu       sync.RWMutex
 
 	// CPU tracking
 	prevKernelTime int64
@@ -177,15 +179,18 @@ func (rm *ResourceMonitor) sendBreach(b ResourceBreach) {
 }
 
 func (rm *ResourceMonitor) takeSample() *ResourceSample {
+	if rm.cfg.PID < 0 || rm.cfg.PID > math.MaxUint32 {
+		return nil
+	}
 	handle, err := windows.OpenProcess(
 		windows.PROCESS_QUERY_LIMITED_INFORMATION,
 		false,
-		uint32(rm.cfg.PID),
+		uint32(rm.cfg.PID), //nolint:gosec // bounded above
 	)
 	if err != nil {
 		return nil
 	}
-	defer windows.CloseHandle(handle)
+	defer func() { _ = windows.CloseHandle(handle) }()
 
 	// CPU: GetProcessTimes
 	var creation, exit, kernel, user windows.Filetime
@@ -219,12 +224,14 @@ func (rm *ResourceMonitor) takeSample() *ResourceSample {
 	memCounters.CB = uint32(unsafe.Sizeof(memCounters))
 	ret, _, _ := procK32GetProcessMemoryInfo.Call(
 		uintptr(handle),
-		uintptr(unsafe.Pointer(&memCounters)),
+		uintptr(unsafe.Pointer(&memCounters)), //nolint:gosec // Win32 API binding
 		uintptr(memCounters.CB),
 	)
 	var memoryBytes int64
 	if ret != 0 {
-		memoryBytes = int64(memCounters.WorkingSetSize)
+		// WorkingSetSize is uintptr (machine-word-sized); on 64-bit Windows
+		// it cannot exceed math.MaxInt64.
+		memoryBytes = int64(memCounters.WorkingSetSize) //nolint:gosec // see comment above
 	}
 
 	return &ResourceSample{
@@ -280,4 +287,3 @@ func medianInt64(values []int64) int64 {
 	}
 	return sorted[n/2]
 }
-

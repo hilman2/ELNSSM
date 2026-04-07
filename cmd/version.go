@@ -3,8 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/hilman2/ELNSSM/internal/buildinfo"
 	"github.com/spf13/cobra"
+
+	"github.com/hilman2/ELNSSM/internal/buildinfo"
 )
 
 var versionCmd = &cobra.Command{

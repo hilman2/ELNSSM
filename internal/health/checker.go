@@ -1,3 +1,5 @@
+// Package health implements service health checks (HTTP, TCP, script)
+// and a runner that schedules them and tracks history per service.
 package health
 
 import (

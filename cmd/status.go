@@ -7,8 +7,9 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/hilman2/ELNSSM/internal/model"
 	"github.com/spf13/cobra"
+
+	"github.com/hilman2/ELNSSM/internal/model"
 )
 
 var statusCmd = &cobra.Command{
@@ -97,7 +98,7 @@ func showAllStatus() error {
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n", svc.Name, svc.State, pid, uptime, svc.RestartCount)
 	}
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }
 

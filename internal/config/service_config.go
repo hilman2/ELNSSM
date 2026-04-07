@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hilman2/ELNSSM/internal/model"
 	"gopkg.in/yaml.v3"
+
+	"github.com/hilman2/ELNSSM/internal/model"
 )
 
 // ServiceConfigYAML is the YAML-friendly representation of a service configuration.
@@ -112,7 +113,7 @@ type LifecycleHooksYAML struct {
 type ResourceLimitsYAML struct {
 	CPUThreshold     float64 `yaml:"cpu_threshold,omitempty"`
 	CPUDuration      string  `yaml:"cpu_duration,omitempty"`
-	MemoryMax        string  `yaml:"memory_max,omitempty"`         // "512MB", "2GB"
+	MemoryMax        string  `yaml:"memory_max,omitempty"` // "512MB", "2GB"
 	MemorySpikeRatio float64 `yaml:"memory_spike_ratio,omitempty"`
 	CheckInterval    string  `yaml:"check_interval,omitempty"`
 }
@@ -197,7 +198,7 @@ func LoadServiceConfig(path string) (*model.Service, error) {
 func SaveServiceConfig(path string, svc *model.Service) error {
 	cfg := ServiceToYAML(svc)
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating service config directory: %w", err)
 	}
 
@@ -206,7 +207,7 @@ func SaveServiceConfig(path string, svc *model.Service) error {
 		return fmt.Errorf("marshaling service config: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0600)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // LoadAllServiceConfigs loads all service configs from a directory.
@@ -219,7 +220,7 @@ func LoadAllServiceConfigs(dir string) ([]*model.Service, error) {
 		return nil, fmt.Errorf("reading services directory: %w", err)
 	}
 
-	var services []*model.Service
+	services := make([]*model.Service, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
 			continue

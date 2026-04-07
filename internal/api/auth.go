@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/hilman2/ELNSSM/internal/config"
 	"github.com/hilman2/ELNSSM/internal/sspi"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type contextKey string

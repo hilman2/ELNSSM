@@ -1,3 +1,6 @@
+// Package winservice provides a thin wrapper over the Windows Service
+// Control Manager (SCM) for listing and controlling native Windows
+// services from the ELNSSM API.
 package winservice
 
 import (
@@ -26,7 +29,7 @@ func ListNativeServices() ([]NativeService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connecting to SCM: %w", err)
 	}
-	defer m.Disconnect()
+	defer func() { _ = m.Disconnect() }()
 
 	names, err := m.ListServices()
 	if err != nil {
@@ -51,7 +54,7 @@ func GetNativeService(name string) (*NativeService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connecting to SCM: %w", err)
 	}
-	defer m.Disconnect()
+	defer func() { _ = m.Disconnect() }()
 
 	return getServiceInfo(m, name)
 }
@@ -62,13 +65,13 @@ func StartNativeService(name string) error {
 	if err != nil {
 		return fmt.Errorf("connecting to SCM: %w", err)
 	}
-	defer m.Disconnect()
+	defer func() { _ = m.Disconnect() }()
 
 	s, err := m.OpenService(name)
 	if err != nil {
 		return fmt.Errorf("opening service %q: %w", name, err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	return s.Start()
 }
@@ -79,13 +82,13 @@ func StopNativeService(name string) error {
 	if err != nil {
 		return fmt.Errorf("connecting to SCM: %w", err)
 	}
-	defer m.Disconnect()
+	defer func() { _ = m.Disconnect() }()
 
 	s, err := m.OpenService(name)
 	if err != nil {
 		return fmt.Errorf("opening service %q: %w", name, err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_, err = s.Control(svc.Stop)
 	if err != nil {
@@ -106,13 +109,13 @@ func RestartNativeService(name string) error {
 	if err != nil {
 		return fmt.Errorf("connecting to SCM: %w", err)
 	}
-	defer m.Disconnect()
+	defer func() { _ = m.Disconnect() }()
 
 	s, err := m.OpenService(name)
 	if err != nil {
 		return fmt.Errorf("opening service %q: %w", name, err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Poll for stopped state (max 30s)
 	for i := 0; i < 60; i++ {
@@ -134,7 +137,7 @@ func getServiceInfo(m *mgr.Mgr, name string) (*NativeService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening service %q: %w", name, err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	cfg, err := s.Config()
 	if err != nil {

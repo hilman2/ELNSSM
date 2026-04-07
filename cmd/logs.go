@@ -62,9 +62,12 @@ func streamLogs(name string) error {
 		RawQuery: fmt.Sprintf("stream=%s", logsStream),
 	}
 
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	conn, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("connecting to log stream: %w\nIs the ELNSSM Guardian running?", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	defer conn.Close()
 
