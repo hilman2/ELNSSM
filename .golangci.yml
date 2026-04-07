@@ -1,21 +1,20 @@
-# golangci-lint configuration
+# golangci-lint v2 configuration
 # Docs: https://golangci-lint.run/usage/configuration/
+
+version: "2"
 
 run:
   timeout: 5m
   tests: true
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
-    - gosimple
     - misspell
     - revive
     - unconvert
@@ -29,40 +28,42 @@ linters:
     - nilerr
     - prealloc
     - whitespace
-
-linters-settings:
-  goimports:
-    local-prefixes: github.com/hilman2/ELNSSM
-  revive:
+  settings:
+    revive:
+      rules:
+        - name: var-naming
+        - name: package-comments
+          disabled: true
+    gosec:
+      excludes:
+        - G104  # already covered by errcheck
+        - G304  # file-path-from-variable: too noisy for a service manager
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - ifElseChain
+        - hugeParam
+  exclusions:
+    paths:
+      - internal/web/dist
     rules:
-      - name: var-naming
-      - name: package-comments
-      - name: exported
-        disabled: true
-  gosec:
-    excludes:
-      - G104  # already covered by errcheck
-      - G304  # file-path-from-variable: too noisy for a service manager
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-    disabled-checks:
-      - ifElseChain
-      - hugeParam
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - unparam
+      - path: cmd/
+        linters:
+          - gocritic
 
-issues:
-  exclude-dirs:
-    - internal/web/dist
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gosec
-        - unparam
-    - path: cmd/
-      linters:
-        - gocritic
-  max-issues-per-linter: 0
-  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/hilman2/ELNSSM
