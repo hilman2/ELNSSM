@@ -73,7 +73,7 @@ jobs:
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -115,7 +115,7 @@ jobs:
           go build -trimpath -ldflags "${LDFLAGS}" -o "elnssm-${{ matrix.goos }}-${{ matrix.goarch }}.exe" .
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: elnssm-${{ matrix.goos }}-${{ matrix.goarch }}
           path: elnssm-${{ matrix.goos }}-${{ matrix.goarch }}.exe
