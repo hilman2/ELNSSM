@@ -54,7 +54,8 @@ health_checks:
     start_delay: "10s"
 
   - type: "script"
-    script_body: |                 # inline script (PowerShell auto-detected)
+    interpreter: "powershell"      # "cmd" or "powershell"; guessed from the script if unset
+    script_body: |                 # inline script
       $response = Invoke-WebRequest -Uri http://localhost:3000/health -UseBasicParsing
       if ($response.StatusCode -ne 200) { exit 1 }
       exit 0
