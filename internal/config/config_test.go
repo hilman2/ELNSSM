@@ -75,6 +75,50 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 }
 
+// The bypass is off only if the YAML key actually reaches the field. A typo in
+// the struct tag would leave it at the default and silently keep the bypass on,
+// which is the opposite of what the operator asked for.
+func TestLoadConfig_AllowLocalBypassRoundTrips(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{
+			name: "explicitly disabled",
+			yaml: "api:\n  auth:\n    enabled: false\n    allow_local_bypass: false\n",
+			want: false,
+		},
+		{
+			name: "explicitly enabled",
+			yaml: "api:\n  auth:\n    enabled: false\n    allow_local_bypass: true\n",
+			want: true,
+		},
+		{
+			name: "absent keeps the default",
+			yaml: "api:\n  auth:\n    enabled: false\n",
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "elnssm.yaml")
+			if err := os.WriteFile(path, []byte(tt.yaml), 0o600); err != nil {
+				t.Fatalf("writing config: %v", err)
+			}
+
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.API.Auth.AllowLocalBypass != tt.want {
+				t.Errorf("AllowLocalBypass = %v, want %v", cfg.API.Auth.AllowLocalBypass, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfig_FileNotFound(t *testing.T) {
 	_, err := Load("/nonexistent/path/config.yaml")
 	if err == nil {
