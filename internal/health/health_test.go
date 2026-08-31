@@ -34,8 +34,12 @@ func TestHTTPChecker_Healthy(t *testing.T) {
 	if result.StatusCode != 200 {
 		t.Errorf("StatusCode = %d, want 200", result.StatusCode)
 	}
-	if result.Duration <= 0 {
-		t.Error("Duration should be > 0")
+	// Not "> 0": the Windows system clock advances in steps of roughly 15ms,
+	// and a request to a local test server finishes well inside one step, so
+	// time.Since can legitimately return zero. Asserting a positive duration
+	// makes this test fail at random on the Windows runner.
+	if result.Duration < 0 {
+		t.Errorf("Duration = %v, want a non-negative measurement", result.Duration)
 	}
 }
 
