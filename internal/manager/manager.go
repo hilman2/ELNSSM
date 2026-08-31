@@ -139,7 +139,14 @@ func (m *Manager) AutoStart(ctx context.Context) {
 					delay = 30 * time.Second // default fallback
 				}
 				slog.Info("Delayed auto-start scheduled", "service", ms.Config.ID, "delay", delay)
-				time.Sleep(delay)
+
+				// Abandon the start if the Guardian shuts down while we wait.
+				// A plain sleep would start the process afterwards, with
+				// nothing left to supervise it.
+				if !sleepOrStop(ctx, m.ctx.Done(), delay) {
+					slog.Info("Delayed auto-start cancelled", "service", ms.Config.ID)
+					return
+				}
 				if err := m.startService(ctx, ms); err != nil {
 					slog.Error("Failed to auto-start service (delayed)", "service", ms.Config.ID, "error", err)
 				}
@@ -263,13 +270,21 @@ func (m *Manager) List() []*model.Service {
 
 	result := make([]*model.Service, 0, len(m.services))
 	for _, ms := range m.services {
+		// m.mu guards the map, not what the entries point at. Copy the config
+		// and the two component pointers under the service's own lock, then
+		// query the components outside it so their locks never nest inside it.
+		ms.mu.Lock()
 		svc := *ms.Config
-		if ms.Wrapper != nil && ms.Wrapper.IsRunning() && svc.StartedAt != nil {
+		wrapper := ms.Wrapper
+		monitor := ms.ResourceMonitor
+		ms.mu.Unlock()
+
+		if wrapper != nil && wrapper.IsRunning() && svc.StartedAt != nil {
 			svc.Uptime = time.Since(*svc.StartedAt)
 		}
 		// Populate live resource metrics
-		if ms.ResourceMonitor != nil {
-			sample := ms.ResourceMonitor.Latest()
+		if monitor != nil {
+			sample := monitor.Latest()
 			svc.CPUPercent = sample.CPUPercent
 			svc.MemoryBytes = sample.MemoryBytes
 		}
@@ -283,7 +298,7 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	m.mu.RLock()
 	services := make([]*ManagedService, 0)
 	for _, ms := range m.services {
-		if ms.Config.State == model.ServiceStateRunning || ms.Config.State == model.ServiceStateStarting {
+		if st := ms.state(); st == model.ServiceStateRunning || st == model.ServiceStateStarting {
 			services = append(services, ms)
 		}
 	}
@@ -294,6 +309,8 @@ func (m *Manager) StopAll(ctx context.Context) error {
 		wg.Add(1)
 		go func(ms *ManagedService) {
 			defer wg.Done()
+			// Config.ID never changes after the service is loaded, so it is
+			// the one field safe to read here without the lock.
 			if err := m.stopService(ctx, ms); err != nil {
 				slog.Error("Error stopping service", "service", ms.Config.ID, "error", err)
 			}
@@ -309,7 +326,7 @@ func (m *Manager) DetachAll() map[string]int {
 	m.mu.RLock()
 	services := make([]*ManagedService, 0)
 	for _, ms := range m.services {
-		if ms.Config.State == model.ServiceStateRunning && ms.Wrapper != nil {
+		if ms.state() == model.ServiceStateRunning {
 			services = append(services, ms)
 		}
 	}
@@ -318,6 +335,14 @@ func (m *Manager) DetachAll() map[string]int {
 	orphans := make(map[string]int)
 	for _, ms := range services {
 		ms.mu.Lock()
+
+		// The state check above happened without this lock, so a concurrent
+		// stopService may have torn the service down in the meantime.
+		if ms.Wrapper == nil {
+			ms.mu.Unlock()
+			continue
+		}
+
 		pid := ms.Wrapper.PID()
 		slog.Info("Detaching service for restart", "service", ms.Config.ID, "pid", pid)
 
@@ -333,14 +358,8 @@ func (m *Manager) DetachAll() map[string]int {
 			ms.HealthRunner = nil
 		}
 
-		// Resource monitor will stop when context is cancelled (via Shutdown)
-		ms.ResourceMonitor = nil
-
-		// Signal monitor goroutine to stop
-		select {
-		case ms.stopCh <- struct{}{}:
-		default:
-		}
+		ms.stopResourceMonitor()
+		ms.signalStop()
 
 		// Detach wrapper (releases job object without killing)
 		ms.Wrapper.Detach()
@@ -407,8 +426,10 @@ func (m *Manager) AdoptOrphans(ctx context.Context, orphans map[string]int) {
 				Limits:        ms.Config.ResourceLimits,
 				CheckInterval: interval,
 			})
+			monCtx, monCancel := context.WithCancel(ctx)
 			ms.ResourceMonitor = rm
-			go rm.Run(ctx)
+			ms.resourceCancel = monCancel
+			go rm.Run(monCtx)
 		}
 
 		ms.mu.Unlock()
@@ -571,9 +592,9 @@ func (m *Manager) startService(_ context.Context, ms *ManagedService) error {
 			Limits:        ms.Config.ResourceLimits,
 			CheckInterval: interval,
 		})
-		ms.ResourceMonitor = rm
 		monCtx, monCancel := context.WithCancel(lifecycleCtx)
-		_ = monCancel // cancelled when stopCh closes via monitor goroutine
+		ms.ResourceMonitor = rm
+		ms.resourceCancel = monCancel
 		go rm.Run(monCtx)
 	}
 
@@ -607,7 +628,7 @@ func (m *Manager) stopService(_ context.Context, ms *ManagedService) error {
 	}
 
 	// Signal monitor goroutine to stop
-	close(ms.stopCh)
+	ms.signalStop()
 
 	// Stop health runner
 	if ms.HealthRunner != nil {
@@ -615,8 +636,7 @@ func (m *Manager) stopService(_ context.Context, ms *ManagedService) error {
 		ms.HealthRunner = nil
 	}
 
-	// Stop resource monitor
-	ms.ResourceMonitor = nil
+	ms.stopResourceMonitor()
 
 	// Use a dedicated timeout context for stopping the process,
 	// NOT the HTTP request context.
@@ -671,8 +691,7 @@ func (m *Manager) doRestart(ctx context.Context, ms *ManagedService) bool {
 		ms.Capture = nil
 	}
 
-	// Stop old resource monitor
-	ms.ResourceMonitor = nil
+	ms.stopResourceMonitor()
 
 	wrapper := process.NewWrapper(ms.Config)
 	if err := wrapper.Start(ctx); err != nil {
@@ -713,197 +732,180 @@ func (m *Manager) doRestart(ctx context.Context, ms *ManagedService) bool {
 			Limits:        ms.Config.ResourceLimits,
 			CheckInterval: interval,
 		})
+		monCtx, monCancel := context.WithCancel(ctx)
 		ms.ResourceMonitor = rm
-		go rm.Run(ctx)
+		ms.resourceCancel = monCancel
+		go rm.Run(monCtx)
 	}
 
 	m.saveRuntimeState(ctx, ms)
 	return true
 }
 
+// monitorService watches one service for as long as it is running: it reacts
+// to the process exiting, to resource-limit breaches and to failing health
+// checks, restarting according to the service's restart policy.
+//
+// It runs concurrently with every API call, so it touches ms.Config only
+// through the accessors on ManagedService. The service ID is the exception:
+// it is fixed once the service is loaded and is read directly.
 func (m *Manager) monitorService(ctx context.Context, ms *ManagedService) {
-	// Get channels
-	var breachCh <-chan process.ResourceBreach
-	if ms.ResourceMonitor != nil {
-		breachCh = ms.ResourceMonitor.BreachCh()
-	}
+	serviceID := ms.Config.ID
 
-	var healthFailCh <-chan model.HealthCheckResult
-	if ms.HealthRunner != nil {
-		healthFailCh = ms.HealthRunner.FailureCh()
-	}
+	// Take the stop channel once and keep it. A later startService installs a
+	// fresh channel for the monitor it starts; watching that one would leave
+	// this goroutine waiting for a signal meant for its successor.
+	stopCh := ms.stopChannel()
+
+	breachCh, healthFailCh := ms.monitorChannels()
 
 	// Periodic resource sample persistence (every 30s)
 	perfTicker := time.NewTicker(30 * time.Second)
 	defer perfTicker.Stop()
 
 	for {
-		if ms.Wrapper == nil {
+		// Read the wrapper once per round and use that pointer for the whole
+		// round. stopService and DetachAll clear the field, so re-reading it
+		// between the nil check and Wait() is what used to panic here.
+		wrapper := ms.wrapper()
+		if wrapper == nil {
 			return
 		}
 
-		// Build select dynamically: always watch wrapper exit + stopCh + ctx
-		// Also optionally watch breach + health channels
 		select {
-		case result := <-ms.Wrapper.Wait():
+		case result := <-wrapper.Wait():
 			// Check if we were asked to stop
 			select {
-			case <-ms.stopCh:
+			case <-stopCh:
 				return
 			default:
 			}
 
 			if result.Crashed || result.ExitCode != 0 {
-				slog.Warn("Service crashed", "service", ms.Config.ID, "exit_code", result.ExitCode)
-				ms.Config.LastExitCode = result.ExitCode
-				if result.Error != nil {
-					ms.Config.LastError = result.Error.Error()
-				}
-				m.emitEvent(ctx, model.EventServiceCrashed, ms.Config.ID,
+				slog.Warn("Service crashed", "service", serviceID, "exit_code", result.ExitCode)
+				ms.withConfig(func(svc *model.Service) {
+					svc.LastExitCode = result.ExitCode
+					if result.Error != nil {
+						svc.LastError = result.Error.Error()
+					}
+				})
+				m.emitEvent(ctx, model.EventServiceCrashed, serviceID,
 					fmt.Sprintf("Process crashed with exit code %d", result.ExitCode))
 
 				// Evaluate restart policy
-				if m.shouldRestart(ms) {
-					ms.Config.RestartCount++
-					delay := m.calculateRestartDelay(ms)
-					slog.Info("Restarting service", "service", ms.Config.ID, "delay", delay, "attempt", ms.Config.RestartCount)
+				svc := ms.configSnapshot()
+				if shouldRestart(&svc) {
+					var attempt int
+					ms.withConfig(func(svc *model.Service) {
+						svc.RestartCount++
+						attempt = svc.RestartCount
+					})
+					delay := calculateRestartDelay(&svc, attempt)
+					slog.Info("Restarting service", "service", serviceID, "delay", delay, "attempt", attempt)
 
-					time.Sleep(delay)
-
+					if !sleepOrStop(ctx, stopCh, delay) {
+						return
+					}
 					if !m.doRestart(ctx, ms) {
 						return
 					}
 
-					m.emitEvent(ctx, model.EventServiceRestarted, ms.Config.ID,
-						fmt.Sprintf("Service restarted (PID: %d, attempt: %d)", ms.Config.PID, ms.Config.RestartCount))
+					m.emitEvent(ctx, model.EventServiceRestarted, serviceID,
+						fmt.Sprintf("Service restarted (PID: %d, attempt: %d)", ms.configSnapshot().PID, attempt))
 
 					// Re-acquire channels for new monitors
-					if ms.ResourceMonitor != nil {
-						breachCh = ms.ResourceMonitor.BreachCh()
-					}
+					breachCh, _ = ms.monitorChannels()
 					continue
 				}
 
-				slog.Error("Restart limit reached", "service", ms.Config.ID)
-				ms.Config.State = model.ServiceStateFailed
-				m.saveRuntimeState(ctx, ms)
-				m.emitEvent(ctx, model.EventRestartLimitReached, ms.Config.ID,
-					fmt.Sprintf("Restart limit reached after %d attempts", ms.Config.RestartCount))
+				slog.Error("Restart limit reached", "service", serviceID)
+				ms.withConfig(func(svc *model.Service) {
+					svc.State = model.ServiceStateFailed
+				})
+				m.saveRuntimeStateLocked(ctx, ms)
+				m.emitEvent(ctx, model.EventRestartLimitReached, serviceID,
+					fmt.Sprintf("Restart limit reached after %d attempts", svc.RestartCount))
 				return
 			}
 
 			// Clean exit
-			if ms.Config.RestartPolicy.Mode == model.RestartAlways {
-				ms.Config.RestartCount++
-				delay := ms.Config.RestartPolicy.Delay
+			if ms.configSnapshot().RestartPolicy.Mode == model.RestartAlways {
+				var delay time.Duration
+				ms.withConfig(func(svc *model.Service) {
+					svc.RestartCount++
+					delay = svc.RestartPolicy.Delay
+				})
 				if delay == 0 {
 					delay = 5 * time.Second
 				}
-				time.Sleep(delay)
-
+				if !sleepOrStop(ctx, stopCh, delay) {
+					return
+				}
 				if !m.doRestart(ctx, ms) {
 					return
 				}
 
 				// Re-acquire channels
-				if ms.ResourceMonitor != nil {
-					breachCh = ms.ResourceMonitor.BreachCh()
-				}
+				breachCh, _ = ms.monitorChannels()
 				continue
 			}
 
-			slog.Info("Service exited cleanly", "service", ms.Config.ID)
-			ms.Config.State = model.ServiceStateStopped
-			ms.Config.PID = 0
-			ms.Config.CPUPercent = 0
-			ms.Config.MemoryBytes = 0
-			m.saveRuntimeState(ctx, ms)
+			slog.Info("Service exited cleanly", "service", serviceID)
+			ms.withConfig(func(svc *model.Service) {
+				svc.State = model.ServiceStateStopped
+				svc.PID = 0
+				svc.CPUPercent = 0
+				svc.MemoryBytes = 0
+			})
+			m.saveRuntimeStateLocked(ctx, ms)
 			return
 
 		case breach := <-breachCh:
-			slog.Warn("Resource threshold breached", "service", ms.Config.ID, "type", breach.Type, "message", breach.Message)
-			m.emitEvent(ctx, model.EventResourceThresholdBreached, ms.Config.ID,
+			slog.Warn("Resource threshold breached", "service", serviceID, "type", breach.Type, "message", breach.Message)
+			m.emitEvent(ctx, model.EventResourceThresholdBreached, serviceID,
 				fmt.Sprintf("Resource breach: %s - %s", breach.Type, breach.Message))
 
-			// Stop and restart the service
-			ms.Config.RestartCount++
-			if ms.Wrapper != nil {
-				stopCtx, cancel := context.WithTimeout(context.Background(), ms.Config.StopTimeout+5*time.Second)
-				_ = ms.Wrapper.Stop(stopCtx)
-				ms.Wrapper.Close()
-				cancel()
-			}
-
-			delay := ms.Config.RestartPolicy.Delay
-			if delay == 0 {
-				delay = 5 * time.Second
-			}
-			time.Sleep(delay)
-
-			if !m.doRestart(ctx, ms) {
+			if !m.restartAfterBreach(ctx, ms, stopCh) {
 				return
 			}
-
-			m.emitEvent(ctx, model.EventServiceRestarted, ms.Config.ID,
-				fmt.Sprintf("Service restarted after resource breach (PID: %d)", ms.Config.PID))
+			m.emitEvent(ctx, model.EventServiceRestarted, serviceID,
+				fmt.Sprintf("Service restarted after resource breach (PID: %d)", ms.configSnapshot().PID))
 
 			// Re-acquire channels
-			if ms.ResourceMonitor != nil {
-				breachCh = ms.ResourceMonitor.BreachCh()
-			}
+			breachCh, _ = ms.monitorChannels()
 			continue
 
 		case <-healthFailCh: // receives model.HealthCheckResult
-			if ms.Config.RestartPolicy.RestartOnHealthFail {
-				slog.Warn("Health check failed, restarting", "service", ms.Config.ID)
-				m.emitEvent(ctx, model.EventHealthCheckFailed, ms.Config.ID, "Health check failed, triggering restart")
+			if ms.configSnapshot().RestartPolicy.RestartOnHealthFail {
+				slog.Warn("Health check failed, restarting", "service", serviceID)
+				m.emitEvent(ctx, model.EventHealthCheckFailed, serviceID, "Health check failed, triggering restart")
 
-				ms.Config.RestartCount++
-				if ms.Wrapper != nil {
-					stopCtx, cancel := context.WithTimeout(context.Background(), ms.Config.StopTimeout+5*time.Second)
-					_ = ms.Wrapper.Stop(stopCtx)
-					ms.Wrapper.Close()
-					cancel()
-				}
-
-				delay := ms.Config.RestartPolicy.Delay
-				if delay == 0 {
-					delay = 5 * time.Second
-				}
-				time.Sleep(delay)
-
-				if !m.doRestart(ctx, ms) {
+				if !m.restartAfterBreach(ctx, ms, stopCh) {
 					return
 				}
-
-				m.emitEvent(ctx, model.EventServiceRestarted, ms.Config.ID,
-					fmt.Sprintf("Service restarted after health check failure (PID: %d)", ms.Config.PID))
+				m.emitEvent(ctx, model.EventServiceRestarted, serviceID,
+					fmt.Sprintf("Service restarted after health check failure (PID: %d)", ms.configSnapshot().PID))
 
 				// Re-acquire channels
-				if ms.ResourceMonitor != nil {
-					breachCh = ms.ResourceMonitor.BreachCh()
-				}
-				if ms.HealthRunner != nil {
-					healthFailCh = ms.HealthRunner.FailureCh()
-				}
+				breachCh, healthFailCh = ms.monitorChannels()
 				continue
 			}
 
 		case <-perfTicker.C:
 			// Persist resource sample for performance graphs.
 			// Errors here are non-fatal: a missed sample is acceptable.
-			if ms.ResourceMonitor != nil {
-				sample := ms.ResourceMonitor.Latest()
-				if err := m.store.AppendResourceSample(ctx, ms.Config.ID, model.ResourceSample{
+			if monitor := ms.resourceMonitor(); monitor != nil {
+				sample := monitor.Latest()
+				if err := m.store.AppendResourceSample(ctx, serviceID, model.ResourceSample{
 					Timestamp:   sample.Timestamp,
 					CPUPercent:  sample.CPUPercent,
 					MemoryBytes: sample.MemoryBytes,
 				}); err != nil {
-					slog.Debug("Failed to persist resource sample", "service", ms.Config.ID, "error", err)
+					slog.Debug("Failed to persist resource sample", "service", serviceID, "error", err)
 				}
 			}
 
-		case <-ms.stopCh:
+		case <-stopCh:
 			return
 		case <-ctx.Done():
 			return
@@ -911,23 +913,79 @@ func (m *Manager) monitorService(ctx context.Context, ms *ManagedService) {
 	}
 }
 
-func (m *Manager) shouldRestart(ms *ManagedService) bool {
-	rp := ms.Config.RestartPolicy
+// restartAfterBreach tears the current process down and starts a fresh one,
+// counting the attempt against the restart policy. It is the path taken when
+// the service is still alive but misbehaving, which is why it stops the
+// process first, unlike the crash path where it has already exited.
+//
+// It returns false when the monitor should stop: the service was asked to
+// shut down during the delay, or the new process failed to start.
+func (m *Manager) restartAfterBreach(ctx context.Context, ms *ManagedService, stopCh <-chan struct{}) bool {
+	var delay time.Duration
+	var stopTimeout time.Duration
+	ms.withConfig(func(svc *model.Service) {
+		svc.RestartCount++
+		delay = svc.RestartPolicy.Delay
+		stopTimeout = svc.StopTimeout
+	})
+	if delay == 0 {
+		delay = 5 * time.Second
+	}
+
+	if wrapper := ms.wrapper(); wrapper != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), stopTimeout+5*time.Second)
+		_ = wrapper.Stop(stopCtx)
+		wrapper.Close()
+		cancel()
+	}
+
+	if !sleepOrStop(ctx, stopCh, delay) {
+		return false
+	}
+	return m.doRestart(ctx, ms)
+}
+
+// sleepOrStop waits out d and reports whether it completed. It returns false
+// as soon as the service is asked to stop or the lifecycle context ends, so a
+// Guardian shutdown does not have to wait for a backoff delay that can reach
+// the configured max_backoff of several minutes.
+func sleepOrStop(ctx context.Context, stopCh <-chan struct{}, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return true
+	case <-stopCh:
+		return false
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// shouldRestart reports whether the restart policy permits another attempt.
+// svc is a snapshot so the answer cannot change while the caller acts on it.
+func shouldRestart(svc *model.Service) bool {
+	rp := svc.RestartPolicy
 
 	switch rp.Mode {
 	case model.RestartNever:
 		return false
 	case model.RestartAlways:
-		return ms.Config.RestartCount < rp.MaxRetries || rp.MaxRetries == 0
+		return svc.RestartCount < rp.MaxRetries || rp.MaxRetries == 0
 	case model.RestartOnFailure:
-		return ms.Config.RestartCount < rp.MaxRetries || rp.MaxRetries == 0
+		return svc.RestartCount < rp.MaxRetries || rp.MaxRetries == 0
 	default:
-		return ms.Config.RestartCount < 10 // safe default
+		return svc.RestartCount < 10 // safe default
 	}
 }
 
-func (m *Manager) calculateRestartDelay(ms *ManagedService) time.Duration {
-	rp := ms.Config.RestartPolicy
+// calculateRestartDelay returns the backoff delay before restart number
+// attempt, growing by the policy's multiplier and capped at its max_backoff.
+// attempt is passed separately from svc because the caller increments the
+// counter under the lock and svc is the snapshot taken before that.
+func calculateRestartDelay(svc *model.Service, attempt int) time.Duration {
+	rp := svc.RestartPolicy
 	delay := rp.Delay
 	if delay == 0 {
 		delay = 5 * time.Second
@@ -939,7 +997,7 @@ func (m *Manager) calculateRestartDelay(ms *ManagedService) time.Duration {
 	}
 
 	// Exponential backoff
-	for i := 1; i < ms.Config.RestartCount; i++ {
+	for i := 1; i < attempt; i++ {
 		delay = time.Duration(float64(delay) * multiplier)
 		if rp.MaxBackoff > 0 && delay > rp.MaxBackoff {
 			delay = rp.MaxBackoff
@@ -950,6 +1008,16 @@ func (m *Manager) calculateRestartDelay(ms *ManagedService) time.Duration {
 	return delay
 }
 
+// saveRuntimeStateLocked persists the runtime state, taking ms.mu itself.
+// Use it from the monitor goroutine, which does not otherwise hold the lock.
+func (m *Manager) saveRuntimeStateLocked(ctx context.Context, ms *ManagedService) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	m.saveRuntimeState(ctx, ms)
+}
+
+// saveRuntimeState writes the service's runtime state to the store.
+// The caller must hold ms.mu.
 func (m *Manager) saveRuntimeState(ctx context.Context, ms *ManagedService) {
 	state := &store.ServiceRuntimeState{
 		State:        ms.Config.State,
