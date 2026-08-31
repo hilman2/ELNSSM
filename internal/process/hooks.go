@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -62,25 +62,57 @@ func ExecuteHook(ctx context.Context, hook *model.LifecycleHook, env map[string]
 	return string(output), err
 }
 
-// writeTempScript writes script body to a temp file, auto-detecting PS vs CMD.
+// writeTempScript writes a hook's script body to a temp file and returns its
+// path, choosing the extension from the script's apparent language. The caller
+// removes the file.
+//
+// Creation has to be exclusive and the name unpredictable. Hooks run with the
+// Guardian's privileges, normally LocalSystem, which puts os.TempDir() at
+// C:\Windows\Temp where unprivileged users may also create files. A name built
+// from a timestamp can be guessed, letting someone place the file first or
+// swap it between the write and the execution and have it run as SYSTEM.
+// os.CreateTemp gives an unguessable name and O_EXCL; the 0o600 mode used
+// before did nothing here, because on Windows the file takes the directory's
+// ACL. The health package writes its check scripts the same way.
 func writeTempScript(body string) (string, error) {
 	ext := ".cmd"
 	if isPowerShellScript(body) {
 		ext = ".ps1"
 	}
 
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("elnssm-hook-%d%s", time.Now().UnixNano(), ext))
-	if err := os.WriteFile(tmpFile, []byte(body), 0o600); err != nil {
+	f, err := os.CreateTemp("", "elnssm-hook-*"+ext)
+	if err != nil {
 		return "", err
 	}
-	return tmpFile, nil
+	name := f.Name()
+
+	if _, err := f.WriteString(body); err != nil {
+		f.Close()
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	return name, nil
 }
 
-// isPowerShellScript detects if the script body looks like PowerShell.
+// hookCmdletRe matches a PowerShell Verb-Noun cmdlet such as Stop-Service.
+// Batch has no such construct, which makes it a stronger signal than a list of
+// keywords: "Stop-Service Spooler" contains none of the keywords used before
+// and so ran under cmd.exe, where it could only fail.
+var hookCmdletRe = regexp.MustCompile(`\b[A-Z][a-zA-Z]+-[A-Z][a-zA-Z]+\b`)
+
+// isPowerShellScript reports whether the body carries syntax only PowerShell
+// has. Unlike a health check, a lifecycle hook has no field to state its
+// interpreter, so this guess is all there is.
 func isPowerShellScript(body string) bool {
-	psKeywords := []string{"$", "Get-", "Set-", "Write-", "Invoke-", "param(", "Test-", "New-", "Import-Module", "foreach", "-eq", "-ne", "-match"}
-	for _, kw := range psKeywords {
-		if strings.Contains(body, kw) {
+	if hookCmdletRe.MatchString(body) {
+		return true
+	}
+	for _, marker := range []string{"$", "param(", "-eq ", "-ne ", "-match ", "-gt ", "-lt ", "Import-Module"} {
+		if strings.Contains(body, marker) {
 			return true
 		}
 	}

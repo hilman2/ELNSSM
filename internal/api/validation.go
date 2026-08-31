@@ -46,7 +46,20 @@ func requestBodyLimit(maxBytes int64) func(http.Handler) http.Handler {
 	}
 }
 
-// containsShellMeta returns true if s contains shell metacharacters.
+// containsShellMeta reports whether s contains characters that cmd.exe treats
+// as syntax rather than as part of a command name.
+//
+// This is not a security boundary and must not be relied on as one. A health
+// check's script_body is executed verbatim by design, so anything this rejects
+// in target can be expressed there instead. What it does is catch a target
+// that was written as if it were a shell one-liner, and point the author at
+// the field meant for that, before the check starts failing in production for
+// reasons the log will not explain.
+//
+// Anyone tempted to treat it as a filter should note the shape of the problem:
+// the set below is a blocklist, and cmd.exe has more syntax than any such list
+// covers. Restricting what may be executed belongs in the service config, not
+// here.
 func containsShellMeta(s string) bool {
-	return strings.ContainsAny(s, "&|;><\\$()^\n\r")
+	return strings.ContainsAny(s, "&|;><\\$()^`%\"'\n\r")
 }

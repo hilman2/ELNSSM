@@ -88,10 +88,14 @@ type HealthCheckConfig struct {
 	Send         string          `yaml:"send,omitempty" json:"send,omitempty"`               // TCP: data to send after connect
 	ExpectResp   string          `yaml:"expect_resp,omitempty" json:"expect_resp,omitempty"` // TCP: expected substring in response
 	ScriptBody   string          `yaml:"script_body,omitempty" json:"script_body,omitempty"` // Script: inline multi-line script
-	Interval     time.Duration   `yaml:"interval" json:"interval"`
-	Timeout      time.Duration   `yaml:"timeout" json:"timeout"`
-	Retries      int             `yaml:"retries" json:"retries"`
-	StartDelay   time.Duration   `yaml:"start_delay" json:"start_delay"`
+	// Interpreter selects what runs ScriptBody: "cmd" or "powershell".
+	// Leaving it empty falls back to guessing from the script text, which
+	// gets it wrong often enough to be worth setting; see health.ScriptShell.
+	Interpreter string        `yaml:"interpreter,omitempty" json:"interpreter,omitempty"`
+	Interval    time.Duration `yaml:"interval" json:"interval"`
+	Timeout     time.Duration `yaml:"timeout" json:"timeout"`
+	Retries     int           `yaml:"retries" json:"retries"`
+	StartDelay  time.Duration `yaml:"start_delay" json:"start_delay"`
 }
 
 // LogConfig defines logging settings for a service.
