@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/hilman2/ELNSSM/internal/cluster"
 )
 
 // handleClusterNodes lists all connected slave nodes (Master only).
@@ -25,29 +27,23 @@ func (s *Server) handleClusterHeartbeat(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var payload struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
-	}
-
+	var payload cluster.Heartbeat
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_BODY", "Invalid heartbeat payload")
 		return
 	}
 
-	// Use the remote address as the slave's address
-	remoteAddr := r.RemoteAddr
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		remoteAddr = forwarded
+	if payload.Name == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_BODY", "Heartbeat is missing 'name'")
+		return
 	}
 
-	// Use the slave's listen address from config if sent, otherwise use remote addr
-	slaveAddr := remoteAddr
-	if addr := r.Header.Get("X-ELNSSM-Listen"); addr != "" {
-		slaveAddr = addr
-	}
-
-	s.cluster.RegisterHeartbeat(payload.Name, slaveAddr, payload.Version)
+	// Take the host from the TCP peer and the port from the payload. Only the
+	// port is the sender's to choose, so the resulting proxy target can never
+	// name a machine other than the one that connected. extractIP reads
+	// RemoteAddr alone and ignores X-Forwarded-For, which is what makes the
+	// host half trustworthy here.
+	s.cluster.RegisterHeartbeat(payload.Name, extractIP(r), payload.ListenPort, payload.Version)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

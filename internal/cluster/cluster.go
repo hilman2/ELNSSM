@@ -4,12 +4,15 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -17,9 +20,27 @@ import (
 	"github.com/hilman2/ELNSSM/internal/config"
 )
 
+// Heartbeat is the payload a slave posts to the master's heartbeat endpoint.
+//
+// ListenPort carries the API port of the sending node. It has to be in the
+// payload because the master cannot observe it: the heartbeat reaches it from
+// an ephemeral source port. The master pairs this port with the peer IP it
+// saw, and never takes the host from the payload or a header, which is what
+// keeps the proxy target from being pointed at an unrelated machine.
+type Heartbeat struct {
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+	ListenPort int    `json:"listen_port"`
+}
+
 // SlaveNode represents a connected slave ELNSSM instance.
 type SlaveNode struct {
-	Name     string    `json:"name"`
+	Name string `json:"name"`
+	// Address is "host:port" and is the target ProxyRequest dials. The host
+	// half always comes from the TCP peer address of the heartbeat, never
+	// from a header, so a caller cannot point it at a third party. It is
+	// empty when the slave did not report a usable listen port; see
+	// RegisterHeartbeat.
 	Address  string    `json:"address"`
 	Status   string    `json:"status"` // "connected", "disconnected", "error"
 	LastSeen time.Time `json:"last_seen"`
@@ -31,6 +52,11 @@ type Manager struct {
 	cfg    *config.ClusterConfig
 	client *http.Client
 
+	// listenPort is this node's own API port, reported to the master in each
+	// heartbeat. The master cannot derive it: the heartbeat arrives from an
+	// ephemeral source port, not from the port the API listens on.
+	listenPort int
+
 	// Master: tracks connected slaves
 	slaves map[string]*SlaveNode
 	mu     sync.RWMutex
@@ -39,14 +65,29 @@ type Manager struct {
 	cancel context.CancelFunc
 }
 
-// New creates a new cluster manager.
-func New(cfg *config.ClusterConfig) *Manager {
+// New creates a new cluster manager. listenAddr is this node's own API listen
+// address in "host:port" form, as configured in api.listen; a port that cannot
+// be parsed from it leaves the heartbeat without one, and the master will then
+// refuse to proxy to this node.
+func New(cfg *config.ClusterConfig, listenAddr string) *Manager {
+	port := 0
+	if _, portStr, err := net.SplitHostPort(listenAddr); err == nil {
+		if p, convErr := strconv.Atoi(portStr); convErr == nil {
+			port = p
+		}
+	}
+	if port == 0 {
+		slog.Warn("Could not determine own API port, master will not be able to proxy to this node",
+			"listen", listenAddr)
+	}
+
 	return &Manager{
 		cfg: cfg,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		slaves: make(map[string]*SlaveNode),
+		listenPort: port,
+		slaves:     make(map[string]*SlaveNode),
 	}
 }
 
@@ -85,10 +126,30 @@ func (m *Manager) Stop() {
 
 // --- Master operations ---
 
-// RegisterHeartbeat processes a heartbeat from a slave.
-func (m *Manager) RegisterHeartbeat(name, address, version string) {
+// RegisterHeartbeat processes a heartbeat from a slave. peerIP must be the IP
+// of the TCP peer the heartbeat arrived from, and listenPort the port the slave
+// reported in its payload; the two are joined into the proxy target address.
+//
+// Passing anything caller-controlled as peerIP reopens a server-side request
+// forgery: the address ends up in the URL that ProxyRequest dials, and the
+// cluster's slave token travels with it. A listenPort outside 1-65535 leaves
+// the node registered but without an address, so it stays visible in the node
+// list while ProxyRequest refuses it.
+func (m *Manager) RegisterHeartbeat(name, peerIP string, listenPort int, version string) {
+	address := ""
+	if listenPort > 0 && listenPort <= 65535 {
+		address = net.JoinHostPort(peerIP, strconv.Itoa(listenPort))
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// A name arriving from a new address is worth a line in the log: names
+	// are chosen by the sender, so this is what taking over another node's
+	// entry would look like.
+	if prev, ok := m.slaves[name]; ok && prev.Address != address {
+		slog.Warn("Slave address changed", "name", name, "old", prev.Address, "new", address)
+	}
 
 	m.slaves[name] = &SlaveNode{
 		Name:     name,
@@ -138,6 +199,20 @@ func (m *Manager) ProxyRequest(ctx context.Context, nodeName, method, path strin
 
 	if !ok {
 		return nil, http.StatusNotFound, fmt.Errorf("slave %q not found", nodeName)
+	}
+
+	// Refuse a node whose address never got a port, and re-check the shape of
+	// the address before interpolating it. RegisterHeartbeat already builds it
+	// from a peer IP and a bounded port, so this only holds if that invariant
+	// is broken later; a bare "host:port" cannot smuggle a path or another
+	// host into the URL below.
+	if node.Address == "" {
+		return nil, http.StatusServiceUnavailable,
+			fmt.Errorf("slave %q reported no listen port, cannot proxy", nodeName)
+	}
+	if _, _, err := net.SplitHostPort(node.Address); err != nil {
+		return nil, http.StatusServiceUnavailable,
+			fmt.Errorf("slave %q has malformed address %q", nodeName, node.Address)
 	}
 
 	url := fmt.Sprintf("http://%s/api/v1%s", node.Address, path)
@@ -195,17 +270,20 @@ func (m *Manager) heartbeatLoop(ctx context.Context) {
 }
 
 func (m *Manager) sendHeartbeat(ctx context.Context) {
-	heartbeat := map[string]string{
-		"name":    m.cfg.NodeName,
-		"version": buildinfo.Version,
+	heartbeat := Heartbeat{
+		Name:       m.cfg.NodeName,
+		Version:    buildinfo.Version,
+		ListenPort: m.listenPort,
 	}
 
-	data, _ := json.Marshal(heartbeat)
+	data, err := json.Marshal(heartbeat)
+	if err != nil {
+		slog.Warn("Failed to encode heartbeat", "error", err)
+		return
+	}
 	url := fmt.Sprintf("http://%s/api/v1/cluster/heartbeat", m.cfg.MasterAddr)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, io.NopCloser(
-		io.NewSectionReader(readerAt(data), 0, int64(len(data))),
-	))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
 		slog.Warn("Failed to create heartbeat request", "error", err)
 		return
@@ -226,18 +304,4 @@ func (m *Manager) sendHeartbeat(ctx context.Context) {
 	if resp.StatusCode >= 400 {
 		slog.Warn("Master rejected heartbeat", "status", resp.StatusCode)
 	}
-}
-
-// readerAt wraps a byte slice to implement io.ReaderAt.
-type readerAt []byte
-
-func (r readerAt) ReadAt(p []byte, off int64) (n int, err error) {
-	if off >= int64(len(r)) {
-		return 0, io.EOF
-	}
-	n = copy(p, r[off:])
-	if n < len(p) {
-		err = io.EOF
-	}
-	return
 }

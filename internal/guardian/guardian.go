@@ -59,7 +59,7 @@ func New(cfg *config.Config) (*Guardian, error) {
 	hostMon := process.NewHostMonitor(2 * time.Second)
 
 	// Create cluster manager
-	clusterMgr := cluster.New(&cfg.Cluster)
+	clusterMgr := cluster.New(&cfg.Cluster, cfg.API.Listen)
 
 	g := &Guardian{
 		cfg:            cfg,
