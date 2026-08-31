@@ -58,8 +58,11 @@ func authMiddleware(cfg *config.AuthConfig, sspiStore *sspi.SessionStore) func(h
 				return
 			}
 
-			// Skip auth for localhost connections
-			if isLoopback(clientIP) {
+			// Loopback callers can skip authentication, including the SSPI
+			// admin check below. Whether that is acceptable depends on who
+			// can reach the listener, so the reasoning lives with the option
+			// in config.AuthConfig.AllowLocalBypass.
+			if cfg.AllowLocalBypass && isLoopback(clientIP) {
 				next.ServeHTTP(w, withAuthContext(r, "local-admin", clientIP))
 				return
 			}

@@ -66,6 +66,21 @@ type AuthConfig struct {
 	Username     string `yaml:"username,omitempty" json:"username,omitempty"`
 	PasswordHash string `yaml:"password_hash,omitempty" json:"-"`
 	TokenHash    string `yaml:"token_hash,omitempty" json:"-"`
+
+	// AllowLocalBypass lets callers from 127.0.0.1 and ::1 through without
+	// credentials, as the identity "local-admin". It defaults to true: on a
+	// typical Windows Server only administrators can sign in interactively,
+	// so anyone able to open a loopback socket already holds the privileges
+	// the API would hand them, and requiring a token there only costs the
+	// operator convenience.
+	//
+	// That assumption breaks in two deployments, and both should set this to
+	// false. On an RDS or terminal server, ordinary users are signed in and
+	// reach loopback like anyone else. And a service account such as
+	// NetworkService, or a compromised IIS worker, reaches loopback with no
+	// interactive logon at all. Because the Guardian starts processes as
+	// LocalSystem, the bypass hands either of them a way up.
+	AllowLocalBypass bool `yaml:"allow_local_bypass" json:"allow_local_bypass"`
 }
 
 // DefaultsConfig holds default values for service settings.

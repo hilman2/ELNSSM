@@ -104,13 +104,29 @@ on the network, edit `elnssm.yaml`:
 api:
   listen: "0.0.0.0:9100"
   ip_whitelist:
-    - "10.0.0.0/8"
+    - "10.0.0.5"
+    - "10.0.0.6"
   auth:
     enabled: true
     type: "token"
 ```
 
+`ip_whitelist` takes individual addresses. CIDR ranges are rejected at startup.
+
 Generate or rotate the API token with `elnssm reset-token`.
+
+Callers from `127.0.0.1` skip authentication and are treated as administrators.
+That suits a server where only administrators can sign in. Where that is not the
+case, such as an RDS host or one running services that could reach loopback on
+their own, turn it off:
+
+```yaml
+api:
+  auth:
+    enabled: true
+    type: "token"
+    allow_local_bypass: false
+```
 
 ## Architecture
 

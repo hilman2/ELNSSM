@@ -11,7 +11,8 @@ api:
     - "::1"
   auth:
     enabled: false
-    type: "token"     # "basic" or "token"
+    type: "token"     # "basic", "token" or "sspi"
+    allow_local_bypass: true   # false: callers from 127.0.0.1 must authenticate too
 
 defaults:
   stop_timeout: "30s"
