@@ -29,8 +29,9 @@ func DefaultConfig() *Config {
 				"::1",
 			},
 			Auth: AuthConfig{
-				Enabled: true,
-				Type:    "token",
+				Enabled:          true,
+				Type:             "token",
+				AllowLocalBypass: true,
 			},
 		},
 		Defaults: DefaultsConfig{
